@@ -1,0 +1,82 @@
+<?php
+
+namespace App\Providers;
+
+use App\Enums\UserStatus;
+use App\Models\Game;
+use App\Models\GameSession;
+use App\Models\Organization;
+use App\Models\Scenario;
+use App\Models\Team;
+use App\Models\User;
+use App\Policies\GamePolicy;
+use App\Policies\GameSessionPolicy;
+use App\Policies\OrganizationPolicy;
+use App\Policies\ScenarioPolicy;
+use App\Policies\TeamPolicy;
+use App\Services\Games\BillingGate;
+use App\Services\Games\CancellationResolution;
+use App\Services\Games\PricingSnapshotProvider;
+use App\Services\Games\RuntimeBootstrap;
+use App\Services\Games\ScenarioAssignmentReadiness;
+use App\Services\Games\UnavailableSessionDependencies;
+use App\Services\Idempotency\DatabaseIdempotencyStore;
+use App\Services\Idempotency\IdempotencyStore;
+use App\Services\Locations\RuntimeLocationVerification;
+use App\Services\Organizations\OrganizationScope;
+use App\Services\Runtime\ARVerification;
+use App\Services\Runtime\HintAction;
+use App\Services\Runtime\LiveChallengeTrigger;
+use App\Services\Runtime\LocationVerification;
+use App\Services\Runtime\QRVerification;
+use App\Services\Runtime\RuntimeInitializer;
+use App\Services\Runtime\ScoreAction;
+use App\Services\Runtime\UnavailableRuntimeDomains;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
+use Illuminate\Queue\Events\JobProcessed;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Redis;
+use Illuminate\Support\ServiceProvider;
+
+class AppServiceProvider extends ServiceProvider
+{
+    public function register(): void
+    {
+        $this->app->bind(IdempotencyStore::class, DatabaseIdempotencyStore::class);
+        $this->app->bind(RuntimeBootstrap::class, RuntimeInitializer::class);
+        $this->app->bind(LocationVerification::class, RuntimeLocationVerification::class);
+        foreach ([QRVerification::class, ARVerification::class, ScoreAction::class, HintAction::class, LiveChallengeTrigger::class] as $port) {
+            $this->app->bind($port, UnavailableRuntimeDomains::class);
+        }
+        foreach ([BillingGate::class, ScenarioAssignmentReadiness::class, PricingSnapshotProvider::class, CancellationResolution::class] as $port) {
+            $this->app->bind($port, UnavailableSessionDependencies::class);
+        }
+    }
+
+    public function boot(): void
+    {
+        Gate::policy(Organization::class, OrganizationPolicy::class);
+        Gate::policy(Team::class, TeamPolicy::class);
+        Gate::policy(Scenario::class, ScenarioPolicy::class);
+        Gate::policy(Game::class, GamePolicy::class);
+        Gate::policy(GameSession::class, GameSessionPolicy::class);
+        Gate::define('roles.manageGlobal', fn (User $user): bool => app(OrganizationScope::class)->isSuperAdmin($user));
+        foreach (['user.read_self', 'user.update_self', 'device.list_self', 'device.revoke_self'] as $ability) {
+            Gate::define($ability, fn (User $user): bool => $user->status === UserStatus::Active->value);
+        }
+        foreach (['register' => 5, 'login' => 10] as $action => $maximum) {
+            RateLimiter::for('identity-'.$action, fn (Request $request) => Limit::perMinute($maximum)->by($request->ip()));
+        }
+        RateLimiter::for('location-submit', fn (Request $request) => Limit::perMinute(config('location.rate_per_minute'))->by((string) $request->user()?->id));
+        RateLimiter::for('runtime-submit', fn (Request $request) => Limit::perMinute(120)->by((string) $request->user()?->id));
+        Event::listen(JobProcessed::class, function (): void {
+            try {
+                Redis::connection()->setex('phase0:queue-worker-heartbeat', 120, (string) now()->timestamp);
+            } catch (\Throwable) {
+            }
+        });
+    }
+}

@@ -1,0 +1,3666 @@
+openapi: 3.1.0
+info:
+  title: Urban AR Team Adventure Game API
+  version: 1.0.0
+  description: Baseline machine-readable contract generated from API Contract v1. Business rules are governed by Product Blueprint
+    v1.
+servers:
+- url: https://api.example.com/api/v1
+  description: Production placeholder
+- url: http://localhost:8000/api/v1
+  description: Local development
+tags:
+- name: AR
+- name: AntiCheat
+- name: Audit
+- name: Auth
+- name: Billing
+- name: Checkpoints
+- name: Devices
+- name: GameMaster
+- name: GameSessions
+- name: Games
+- name: Hints
+- name: LiveChallenges
+- name: Locations
+- name: Media
+- name: Organizations
+- name: QR
+- name: Runtime
+- name: ScenarioAssignments
+- name: ScenarioGraph
+- name: Scenarios
+- name: Scores
+- name: Store
+- name: Teams
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      operationId: registerUser
+      security: []
+      description: Atomic user, device and token creation. Five requests per minute per IP. Retry duplicates return 422; tokens are never replayed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdentityRegistration'
+      responses:
+        '201':
+          description: Created; token is returned only once.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityAuthenticationResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /auth/login:
+    post:
+      tags: [Auth]
+      operationId: loginUser
+      security: []
+      description: Ten requests per minute per IP. Both identifiers, when supplied, must match the same account. Suspended, blocked and revoked devices are denied with AUTHORIZATION_DENIED.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdentityLogin'
+      responses:
+        '200':
+          description: New token; existing device metadata refreshed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityAuthenticationResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logoutUser
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: Current token revoked.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /me:
+    get:
+      tags: [Auth]
+      operationId: getMe
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/IdentityDeviceHeader'
+      responses:
+        '200':
+          description: Public self profile.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/IdentityUser'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    patch:
+      tags: [Auth]
+      operationId: updateMe
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              description: At least one login identifier must remain after applying changes. All other fields, including status, role and user_id, are rejected.
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 255
+                email:
+                  type: [string, 'null']
+                  format: email
+                  maxLength: 255
+                mobile:
+                  type: [string, 'null']
+                  pattern: '^\+?[0-9]{7,15}$'
+      responses:
+        '200':
+          description: Updated profile.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/IdentityUser'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /devices:
+    get:
+      tags: [Devices]
+      operationId: listDevices
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: limit
+        in: query
+        schema: {type: integer, minimum: 1, maximum: 100, default: 25}
+      - name: cursor
+        in: query
+        schema: {type: string}
+      responses:
+        '200':
+          description: Owned devices, including revocation history; cursor pagination.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/IdentityDevice'
+                  meta:
+                    type: object
+                    properties:
+                      pagination:
+                        type: object
+                        properties:
+                          cursor: {type: [string, 'null']}
+                          next_cursor: {type: [string, 'null']}
+                          has_more: {type: boolean}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /devices/{device_id}:
+    delete:
+      tags: [Devices]
+      operationId: revokeDevice
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      responses:
+        '204':
+          description: Revoked or already revoked. All tokens issued for this device are revoked. Repeating with a revoked token returns 401; another active device may safely repeat.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /teams:
+    post:
+      tags:
+        - Teams
+      operationId: createTeam
+      security:
+        -
+          bearerAuth: []
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+      parameters:
+        -
+          name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            $ref: '#/components/schemas/IdempotencyKey'
+          description: 'Optional, actor-scoped, 24-hour replay. Same key with a different operation or payload returns IDEMPOTENCY_CONFLICT. Current identity and resource access are rechecked.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamCreate'
+      description: 'Creates a personal persistent Team with its creator as captain and first active member. Organization ownership cannot be supplied by the client.'
+    get:
+      tags:
+        - Teams
+      operationId: listTeams
+      security:
+        -
+          bearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+      parameters:
+        -
+          name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
+        -
+          name: cursor
+          in: query
+          schema:
+            type: string
+            maxLength: 512
+      description: 'Member-safe Team projection; archived history accessible to former members. Unrelated resources are hidden except explicitly privileged support scope. Never includes private identity data or membership history of others.'
+  '/teams/{team_id}':
+    get:
+      tags:
+        - Teams
+      operationId: getTeam
+      security:
+        -
+          bearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+      parameters:
+        -
+          name: team_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      description: 'Member-safe Team projection; archived history accessible to former members. Unrelated resources are hidden except explicitly privileged support scope. Never includes private identity data or membership history of others.'
+    patch:
+      tags:
+        - Teams
+      operationId: updateTeam
+      security:
+        -
+          bearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+      parameters:
+        -
+          name: team_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        -
+          name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            $ref: '#/components/schemas/IdempotencyKey'
+          description: 'Optional, actor-scoped, 24-hour replay. Same key with a different operation or payload returns IDEMPOTENCY_CONFLICT. Current identity and resource access are rechecked.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamUpdate'
+  '/teams/{team_id}/invites':
+    post:
+      tags:
+        - Teams
+      operationId: createTeamInvite
+      security:
+        -
+          bearerAuth: []
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamInviteResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+      parameters:
+        -
+          name: team_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamInviteCreate'
+      description: 'Captain or authorized audited support override. Raw invite_code returned only at creation; only its hash is persisted. Idempotency-Key is not accepted for this operation.'
+    get:
+      tags:
+        - Teams
+      operationId: listTeamInvites
+      security:
+        -
+          bearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamInviteListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+      parameters:
+        -
+          name: team_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        -
+          name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
+        -
+          name: cursor
+          in: query
+          schema:
+            type: string
+            maxLength: 512
+  '/teams/{team_id}/invites/{invite_id}':
+    delete:
+      tags:
+        - Teams
+      operationId: revokeTeamInvite
+      security:
+        -
+          bearerAuth: []
+      responses:
+        '204':
+          description: 'Success; no response body.'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+      parameters:
+        -
+          name: team_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        -
+          name: invite_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        -
+          name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            $ref: '#/components/schemas/IdempotencyKey'
+          description: 'Optional, actor-scoped, 24-hour replay. Same key with a different operation or payload returns IDEMPOTENCY_CONFLICT. Current identity and resource access are rechecked.'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamReason'
+  /teams/join:
+    post:
+      tags:
+        - Teams
+      operationId: joinTeam
+      security:
+        -
+          bearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+      parameters:
+        -
+          name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            $ref: '#/components/schemas/IdempotencyKey'
+          description: 'Optional, actor-scoped, 24-hour replay. Same key with a different operation or payload returns IDEMPOTENCY_CONFLICT. Current identity and resource access are rechecked.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamJoin'
+      description: 'Consumes an opaque invite atomically under Team/invite locks. Errors: TEAM_FULL, INVITE_EXPIRED, INVITE_REVOKED, ALREADY_TEAM_MEMBER, ACTION_NOT_ALLOWED (exhausted), STATE_TRANSITION_INVALID (archived), RESOURCE_NOT_FOUND. Organization-associated Teams also require current tenant access.'
+  '/teams/{team_id}/leave':
+    post:
+      tags:
+        - Teams
+      operationId: leaveTeam
+      security:
+        -
+          bearerAuth: []
+      responses:
+        '204':
+          description: 'Success; no response body.'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+      parameters:
+        -
+          name: team_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        -
+          name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            $ref: '#/components/schemas/IdempotencyKey'
+          description: 'Optional, actor-scoped, 24-hour replay. Same key with a different operation or payload returns IDEMPOTENCY_CONFLICT. Current identity and resource access are rechecked.'
+  '/teams/{team_id}/members/{user_id}':
+    delete:
+      tags:
+        - Teams
+      operationId: removeTeamMember
+      security:
+        -
+          bearerAuth: []
+      responses:
+        '204':
+          description: 'Success; no response body.'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+      parameters:
+        -
+          name: team_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        -
+          name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        -
+          name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            $ref: '#/components/schemas/IdempotencyKey'
+          description: 'Optional, actor-scoped, 24-hour replay. Same key with a different operation or payload returns IDEMPOTENCY_CONFLICT. Current identity and resource access are rechecked.'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamReason'
+  '/teams/{team_id}/transfer-captaincy':
+    post:
+      tags:
+        - Teams
+      operationId: transferCaptaincy
+      security:
+        -
+          bearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+      parameters:
+        -
+          name: team_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        -
+          name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            $ref: '#/components/schemas/IdempotencyKey'
+          description: 'Optional, actor-scoped, 24-hour replay. Same key with a different operation or payload returns IDEMPOTENCY_CONFLICT. Current identity and resource access are rechecked.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamTransfer'
+  '/teams/{team_id}/archive':
+    post:
+      tags:
+        - Teams
+      operationId: archiveTeam
+      security:
+        -
+          bearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+      parameters:
+        -
+          name: team_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        -
+          name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            $ref: '#/components/schemas/IdempotencyKey'
+          description: 'Optional, actor-scoped, 24-hour replay. Same key with a different operation or payload returns IDEMPOTENCY_CONFLICT. Current identity and resource access are rechecked.'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamReason'
+  /games:
+    {"post":{"tags":["Games"],"operationId":"createGame","summary":"createGame","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"201":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/GameSuccess"}}}}},"security":[{"bearerAuth":[]}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/GameCreate"}}}},"parameters":[{"name":"Idempotency-Key","in":"header","required":false,"schema":{"type":"string","minLength":8,"maxLength":255}}],"description":"Tenant-scoped; opaque public IDs only. Unknown request fields are rejected. Captain and Player projections are limited; assigned GameMaster and OrganizationAdmin operations are policy checked."},"get":{"tags":["Games"],"operationId":"listGames","summary":"listGames","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/GameList"}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"limit","in":"query","schema":{"type":"integer","minimum":1,"maximum":100,"default":25}},{"name":"cursor","in":"query","schema":{"type":"string","maxLength":512}}],"description":"Tenant-scoped; opaque public IDs only. Unknown request fields are rejected. Captain and Player projections are limited; assigned GameMaster and OrganizationAdmin operations are policy checked."}}
+  /games/{game_id}:
+    {"get":{"tags":["Games"],"operationId":"getGame","summary":"getGame","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/GameSuccess"}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"game_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"description":"Tenant-scoped; opaque public IDs only. Unknown request fields are rejected. Captain and Player projections are limited; assigned GameMaster and OrganizationAdmin operations are policy checked."},"patch":{"tags":["Games"],"operationId":"updateGame","summary":"updateGame","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/GameSuccess"}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"game_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"Idempotency-Key","in":"header","required":false,"schema":{"type":"string","minLength":8,"maxLength":255}}],"requestBody":{"required":false,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/GameUpdate"}}}},"description":"Tenant-scoped; opaque public IDs only. Unknown request fields are rejected. Captain and Player projections are limited; assigned GameMaster and OrganizationAdmin operations are policy checked."}}
+  /games/{game_id}/archive:
+    {"post":{"tags":["Games"],"operationId":"archiveGame","summary":"archiveGame","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/GameSuccess"}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"game_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"Idempotency-Key","in":"header","required":false,"schema":{"type":"string","minLength":8,"maxLength":255}}],"requestBody":{"required":false,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/GameReason"}}}},"description":"Tenant-scoped; opaque public IDs only. Unknown request fields are rejected. Captain and Player projections are limited; assigned GameMaster and OrganizationAdmin operations are policy checked."}}
+  /game-sessions:
+    {"post":{"tags":["GameSessions"],"operationId":"createGameSession","summary":"createGameSession","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"201":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/GameSessionSuccess"}}}}},"security":[{"bearerAuth":[]}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/SessionCreate"}}}},"parameters":[{"name":"Idempotency-Key","in":"header","required":false,"schema":{"type":"string","minLength":8,"maxLength":255}}],"description":"Tenant-scoped; opaque public IDs only. Unknown request fields are rejected. Captain and Player projections are limited; assigned GameMaster and OrganizationAdmin operations are policy checked."},"get":{"tags":["GameSessions"],"operationId":"listGameSessions","summary":"listGameSessions","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/GameSessionList"}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"limit","in":"query","schema":{"type":"integer","minimum":1,"maximum":100,"default":25}},{"name":"cursor","in":"query","schema":{"type":"string","maxLength":512}}],"description":"Tenant-scoped; opaque public IDs only. Unknown request fields are rejected. Captain and Player projections are limited; assigned GameMaster and OrganizationAdmin operations are policy checked."}}
+  /game-sessions/{session_id}:
+    {"get":{"tags":["GameSessions"],"operationId":"getGameSession","summary":"getGameSession","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/GameSessionSuccess"}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"session_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"description":"Tenant-scoped; opaque public IDs only. Unknown request fields are rejected. Captain and Player projections are limited; assigned GameMaster and OrganizationAdmin operations are policy checked."},"patch":{"tags":["GameSessions"],"operationId":"updateGameSession","summary":"updateGameSession","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/GameSessionSuccess"}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"session_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"Idempotency-Key","in":"header","required":false,"schema":{"type":"string","minLength":8,"maxLength":255}}],"requestBody":{"required":false,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/SessionUpdate"}}}},"description":"Tenant-scoped; opaque public IDs only. Unknown request fields are rejected. Captain and Player projections are limited; assigned GameMaster and OrganizationAdmin operations are policy checked."}}
+  /game-sessions/{session_id}/open-registration:
+    {"post":{"tags":["GameSessions"],"operationId":"openSessionRegistration","summary":"openSessionRegistration","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/GameSessionSuccess"}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"session_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"Idempotency-Key","in":"header","required":false,"schema":{"type":"string","minLength":8,"maxLength":255}}],"requestBody":{"required":false,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/GameReason"}}}},"description":"Tenant-scoped; opaque public IDs only. Unknown request fields are rejected. Captain and Player projections are limited; assigned GameMaster and OrganizationAdmin operations are policy checked. Phase 1.4 external Billing, pricing, Scenario, Runtime and cancellation adapters fail closed until implemented. No client readiness/payment/scenario assertions are accepted."}}
+  /game-sessions/{session_id}/close-registration:
+    {"post":{"tags":["GameSessions"],"operationId":"closeSessionRegistration","summary":"closeSessionRegistration","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/GameSessionSuccess"}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"session_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"Idempotency-Key","in":"header","required":false,"schema":{"type":"string","minLength":8,"maxLength":255}}],"requestBody":{"required":false,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/GameReason"}}}},"description":"Tenant-scoped; opaque public IDs only. Unknown request fields are rejected. Captain and Player projections are limited; assigned GameMaster and OrganizationAdmin operations are policy checked. Phase 1.4 external Billing, pricing, Scenario, Runtime and cancellation adapters fail closed until implemented. No client readiness/payment/scenario assertions are accepted."}}
+  /game-sessions/{session_id}/register-team:
+    {"post":{"tags":["GameSessions"],"operationId":"registerTeamInSession","summary":"registerTeamInSession","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/GameSessionSuccess"}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"session_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"Idempotency-Key","in":"header","required":false,"schema":{"type":"string","minLength":8,"maxLength":255}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/SessionRegisterTeam"}}}},"description":"Tenant-scoped; opaque public IDs only. Unknown request fields are rejected. Captain and Player projections are limited; assigned GameMaster and OrganizationAdmin operations are policy checked."}}
+  /game-sessions/{session_id}/teams/{team_id}:
+    {"delete":{"tags":["GameSessions"],"operationId":"removeTeamFromSession","summary":"removeTeamFromSession","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/GameSessionSuccess"}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"session_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"team_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"Idempotency-Key","in":"header","required":false,"schema":{"type":"string","minLength":8,"maxLength":255}}],"requestBody":{"required":false,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/GameReason"}}}},"description":"Tenant-scoped; opaque public IDs only. Unknown request fields are rejected. Captain and Player projections are limited; assigned GameMaster and OrganizationAdmin operations are policy checked."}}
+  /game-sessions/{session_id}/bind-device:
+    {"post":{"tags":["GameSessions"],"operationId":"bindSessionDevice","summary":"bindSessionDevice","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/GameSessionSuccess"}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"session_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"Idempotency-Key","in":"header","required":false,"schema":{"type":"string","minLength":8,"maxLength":255}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/SessionDevice"}}}},"description":"Tenant-scoped; opaque public IDs only. Unknown request fields are rejected. Captain and Player projections are limited; assigned GameMaster and OrganizationAdmin operations are policy checked."}}
+  /game-sessions/{session_id}/rebind-device:
+    {"post":{"tags":["GameSessions"],"operationId":"rebindSessionDevice","summary":"rebindSessionDevice","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/GameSessionSuccess"}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"session_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8,"maxLength":255}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/SessionDevice"}}}},"description":"Tenant-scoped; opaque public IDs only. Unknown request fields are rejected. Captain and Player projections are limited; assigned GameMaster and OrganizationAdmin operations are policy checked."}}
+  /game-sessions/{session_id}/ready:
+    {"post":{"tags":["GameSessions"],"operationId":"markPlayerReady","summary":"markPlayerReady","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/GameSessionSuccess"}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"session_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"Idempotency-Key","in":"header","required":false,"schema":{"type":"string","minLength":8,"maxLength":255}},{"name":"X-Device-Id","in":"header","required":true,"schema":{"type":"string","format":"uuid"}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/SessionReady"}}}},"description":"Tenant-scoped; opaque public IDs only. Unknown request fields are rejected. Captain and Player projections are limited; assigned GameMaster and OrganizationAdmin operations are policy checked. Phase 1.4 external Billing, pricing, Scenario, Runtime and cancellation adapters fail closed until implemented. No client readiness/payment/scenario assertions are accepted."}}
+  /game-sessions/{session_id}/start:
+    {"post":{"tags":["GameSessions"],"operationId":"startSession","summary":"startSession","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/SessionStartResultSuccess"}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"session_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8,"maxLength":255}}],"requestBody":{"required":false,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/GameReason"}}}},"description":"Tenant-scoped; opaque public IDs only. Unknown request fields are rejected. Captain and Player projections are limited; assigned GameMaster and OrganizationAdmin operations are policy checked. Phase 1.4 external Billing, pricing, Scenario, Runtime and cancellation adapters fail closed until implemented. No client readiness/payment/scenario assertions are accepted."}}
+  /game-sessions/{session_id}/pause:
+    {"post":{"tags":["GameSessions"],"operationId":"pauseSession","summary":"pauseSession","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/GameSessionSuccess"}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"session_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8,"maxLength":255}}],"requestBody":{"required":false,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/GameReason"}}}},"description":"Tenant-scoped; opaque public IDs only. Unknown request fields are rejected. Captain and Player projections are limited; assigned GameMaster and OrganizationAdmin operations are policy checked."}}
+  /game-sessions/{session_id}/resume:
+    {"post":{"tags":["GameSessions"],"operationId":"resumeSession","summary":"resumeSession","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/GameSessionSuccess"}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"session_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8,"maxLength":255}}],"requestBody":{"required":false,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/GameReason"}}}},"description":"Tenant-scoped; opaque public IDs only. Unknown request fields are rejected. Captain and Player projections are limited; assigned GameMaster and OrganizationAdmin operations are policy checked."}}
+  /game-sessions/{session_id}/finish:
+    {"post":{"tags":["GameSessions"],"operationId":"finishSession","summary":"finishSession","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/GameSessionSuccess"}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"session_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8,"maxLength":255}}],"requestBody":{"required":false,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/GameReason"}}}},"description":"Tenant-scoped; opaque public IDs only. Unknown request fields are rejected. Captain and Player projections are limited; assigned GameMaster and OrganizationAdmin operations are policy checked."}}
+  /game-sessions/{session_id}/cancel:
+    {"post":{"tags":["GameSessions"],"operationId":"cancelSession","summary":"cancelSession","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/GameSessionSuccess"}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"session_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8,"maxLength":255}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/SessionCancel"}}}},"description":"Tenant-scoped; opaque public IDs only. Unknown request fields are rejected. Captain and Player projections are limited; assigned GameMaster and OrganizationAdmin operations are policy checked. Phase 1.4 external Billing, pricing, Scenario, Runtime and cancellation adapters fail closed until implemented. No client readiness/payment/scenario assertions are accepted."}}
+  /game-sessions/{session_id}/state:
+    {"get":{"tags":["GameSessions"],"operationId":"getSessionState","summary":"getSessionState","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/GameSessionSuccess"}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"session_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"description":"Tenant-scoped; opaque public IDs only. Unknown request fields are rejected. Captain and Player projections are limited; assigned GameMaster and OrganizationAdmin operations are policy checked."}}
+  /game-sessions/{session_id}/timeline:
+    {"get":{"tags":["GameSessions"],"operationId":"getSessionTimeline","summary":"getSessionTimeline","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/SessionTimelineEventList"}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"session_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"limit","in":"query","schema":{"type":"integer","minimum":1,"maximum":100,"default":25}},{"name":"cursor","in":"query","schema":{"type":"string","maxLength":512}}],"description":"Tenant-scoped; opaque public IDs only. Unknown request fields are rejected. Captain and Player projections are limited; assigned GameMaster and OrganizationAdmin operations are policy checked."}}
+  /scenarios:
+    {"post":{"tags":["Scenarios"],"operationId":"createScenario","summary":"createScenario","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"201":{"description":"Success","content":{"application/json":{"schema":{"type":"object","required":["data"],"properties":{"data":{"$ref":"#/components/schemas/ScenarioResource"}}}}}}},"security":[{"bearerAuth":[]}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ScenarioCreate"}}}},"description":"OrganizationAdmin source API; Player and unassigned content readers denied. Public UUIDs and stable node keys only. Published content is immutable. Draft graph saves reject structural errors and return full semantic validation; explicit validation persists a revision-bound result. External assets fail closed. Simulation is structural only. Archive is service-level; no new public route.","parameters":[{"name":"Idempotency-Key","in":"header","required":false,"schema":{"type":"string","minLength":8,"maxLength":255}}]},"get":{"tags":["Scenarios"],"operationId":"listScenarios","summary":"listScenarios","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Success","content":{"application/json":{"schema":{"type":"object","required":["data"],"properties":{"data":{"type":"array","items":{"$ref":"#/components/schemas/ScenarioResource"}}}}}}}},"security":[{"bearerAuth":[]}],"description":"OrganizationAdmin source API; Player and unassigned content readers denied. Public UUIDs and stable node keys only. Published content is immutable. Draft graph saves reject structural errors and return full semantic validation; explicit validation persists a revision-bound result. External assets fail closed. Simulation is structural only. Archive is service-level; no new public route.","parameters":[{"name":"limit","in":"query","schema":{"type":"integer","minimum":1,"maximum":100,"default":25}},{"name":"cursor","in":"query","schema":{"type":"string","maxLength":512}}]}}
+  /scenarios/{scenario_id}:
+    {"get":{"tags":["Scenarios"],"operationId":"getScenario","summary":"getScenario","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Success","content":{"application/json":{"schema":{"type":"object","required":["data"],"properties":{"data":{"$ref":"#/components/schemas/ScenarioResource"}}}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"scenario_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"description":"OrganizationAdmin source API; Player and unassigned content readers denied. Public UUIDs and stable node keys only. Published content is immutable. Draft graph saves reject structural errors and return full semantic validation; explicit validation persists a revision-bound result. External assets fail closed. Simulation is structural only. Archive is service-level; no new public route."},"patch":{"tags":["Scenarios"],"operationId":"updateScenario","summary":"updateScenario","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Success","content":{"application/json":{"schema":{"type":"object","required":["data"],"properties":{"data":{"$ref":"#/components/schemas/ScenarioResource"}}}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"scenario_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"Idempotency-Key","in":"header","required":false,"schema":{"type":"string","minLength":8,"maxLength":255}}],"requestBody":{"required":false,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ScenarioUpdate"}}}},"description":"OrganizationAdmin source API; Player and unassigned content readers denied. Public UUIDs and stable node keys only. Published content is immutable. Draft graph saves reject structural errors and return full semantic validation; explicit validation persists a revision-bound result. External assets fail closed. Simulation is structural only. Archive is service-level; no new public route."}}
+  /scenarios/{scenario_id}/versions:
+    {"get":{"tags":["Scenarios"],"operationId":"listScenarioVersions","summary":"listScenarioVersions","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Success","content":{"application/json":{"schema":{"type":"object","required":["data"],"properties":{"data":{"type":"array","items":{"$ref":"#/components/schemas/ScenarioVersionResource"}}}}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"scenario_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"limit","in":"query","schema":{"type":"integer","minimum":1,"maximum":100,"default":25}},{"name":"cursor","in":"query","schema":{"type":"string","maxLength":512}}],"description":"OrganizationAdmin source API; Player and unassigned content readers denied. Public UUIDs and stable node keys only. Published content is immutable. Draft graph saves reject structural errors and return full semantic validation; explicit validation persists a revision-bound result. External assets fail closed. Simulation is structural only. Archive is service-level; no new public route."},"post":{"tags":["Scenarios"],"operationId":"createScenarioVersion","summary":"createScenarioVersion","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"201":{"description":"Success","content":{"application/json":{"schema":{"type":"object","required":["data"],"properties":{"data":{"$ref":"#/components/schemas/ScenarioVersionResource"}}}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"scenario_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"Idempotency-Key","in":"header","required":false,"schema":{"type":"string","minLength":8,"maxLength":255}}],"requestBody":{"required":false,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ScenarioVersionCreate"}}}},"description":"OrganizationAdmin source API; Player and unassigned content readers denied. Public UUIDs and stable node keys only. Published content is immutable. Draft graph saves reject structural errors and return full semantic validation; explicit validation persists a revision-bound result. External assets fail closed. Simulation is structural only. Archive is service-level; no new public route."}}
+  /scenario-versions/{version_id}:
+    {"get":{"tags":["Scenarios"],"operationId":"getScenarioVersion","summary":"getScenarioVersion","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Success","content":{"application/json":{"schema":{"type":"object","required":["data"],"properties":{"data":{"$ref":"#/components/schemas/ScenarioVersionResource"}}}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"version_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"description":"OrganizationAdmin source API; Player and unassigned content readers denied. Public UUIDs and stable node keys only. Published content is immutable. Draft graph saves reject structural errors and return full semantic validation; explicit validation persists a revision-bound result. External assets fail closed. Simulation is structural only. Archive is service-level; no new public route."},"patch":{"tags":["Scenarios"],"operationId":"updateScenarioVersion","summary":"updateScenarioVersion","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Success","content":{"application/json":{"schema":{"type":"object","required":["data"],"properties":{"data":{"$ref":"#/components/schemas/ScenarioVersionResource"}}}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"version_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"Idempotency-Key","in":"header","required":false,"schema":{"type":"string","minLength":8,"maxLength":255}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ScenarioVersionUpdate"}}}},"description":"OrganizationAdmin source API; Player and unassigned content readers denied. Public UUIDs and stable node keys only. Published content is immutable. Draft graph saves reject structural errors and return full semantic validation; explicit validation persists a revision-bound result. External assets fail closed. Simulation is structural only. Archive is service-level; no new public route."}}
+  /scenario-versions/{version_id}/validate:
+    {"post":{"tags":["Scenarios"],"operationId":"validateScenarioVersion","summary":"validateScenarioVersion","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Success","content":{"application/json":{"schema":{"type":"object","required":["data"],"properties":{"data":{"$ref":"#/components/schemas/ScenarioValidation"}}}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"version_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"Idempotency-Key","in":"header","required":false,"schema":{"type":"string","minLength":8,"maxLength":255}}],"requestBody":{"required":false,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ScenarioRun"}}}},"description":"OrganizationAdmin source API; Player and unassigned content readers denied. Public UUIDs and stable node keys only. Published content is immutable. Draft graph saves reject structural errors and return full semantic validation; explicit validation persists a revision-bound result. External assets fail closed. Simulation is structural only. Archive is service-level; no new public route."}}
+  /scenario-versions/{version_id}/publish:
+    {"post":{"tags":["Scenarios"],"operationId":"publishScenarioVersion","summary":"publishScenarioVersion","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Success","content":{"application/json":{"schema":{"type":"object","required":["data"],"properties":{"data":{"$ref":"#/components/schemas/ScenarioVersionResource"}}}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"version_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"Idempotency-Key","in":"header","required":false,"schema":{"type":"string","minLength":8,"maxLength":255}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ScenarioPublish"}}}},"description":"OrganizationAdmin source API; Player and unassigned content readers denied. Public UUIDs and stable node keys only. Published content is immutable. Draft graph saves reject structural errors and return full semantic validation; explicit validation persists a revision-bound result. External assets fail closed. Simulation is structural only. Archive is service-level; no new public route."}}
+  /scenario-versions/{version_id}/duplicate:
+    {"post":{"tags":["Scenarios"],"operationId":"duplicateScenarioVersion","summary":"duplicateScenarioVersion","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"201":{"description":"Success","content":{"application/json":{"schema":{"type":"object","required":["data"],"properties":{"data":{"$ref":"#/components/schemas/ScenarioVersionResource"}}}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"version_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"Idempotency-Key","in":"header","required":false,"schema":{"type":"string","minLength":8,"maxLength":255}}],"requestBody":{"required":false,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ScenarioReason"}}}},"description":"OrganizationAdmin source API; Player and unassigned content readers denied. Public UUIDs and stable node keys only. Published content is immutable. Draft graph saves reject structural errors and return full semantic validation; explicit validation persists a revision-bound result. External assets fail closed. Simulation is structural only. Archive is service-level; no new public route."}}
+  /scenario-versions/{version_id}/simulate:
+    {"post":{"tags":["Scenarios"],"operationId":"simulateScenarioVersion","summary":"simulateScenarioVersion","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Success","content":{"application/json":{"schema":{"type":"object","required":["data"],"properties":{"data":{"$ref":"#/components/schemas/ScenarioSimulation"}}}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"version_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"Idempotency-Key","in":"header","required":false,"schema":{"type":"string","minLength":8,"maxLength":255}}],"requestBody":{"required":false,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ScenarioRun"}}}},"description":"OrganizationAdmin source API; Player and unassigned content readers denied. Public UUIDs and stable node keys only. Published content is immutable. Draft graph saves reject structural errors and return full semantic validation; explicit validation persists a revision-bound result. External assets fail closed. Simulation is structural only. Archive is service-level; no new public route."}}
+  /scenario-versions/{version_id}/graph:
+    {"get":{"tags":["ScenarioGraph"],"operationId":"getScenarioGraph","summary":"getScenarioGraph","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Success","content":{"application/json":{"schema":{"type":"object","required":["data"],"properties":{"data":{"$ref":"#/components/schemas/ScenarioGraphResult"}}}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"version_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"description":"OrganizationAdmin source API; Player and unassigned content readers denied. Public UUIDs and stable node keys only. Published content is immutable. Draft graph saves reject structural errors and return full semantic validation; explicit validation persists a revision-bound result. External assets fail closed. Simulation is structural only. Archive is service-level; no new public route."},"put":{"tags":["ScenarioGraph"],"operationId":"replaceScenarioGraph","summary":"replaceScenarioGraph","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Success","content":{"application/json":{"schema":{"type":"object","required":["data"],"properties":{"data":{"$ref":"#/components/schemas/ScenarioGraphResult"}}}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"version_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"Idempotency-Key","in":"header","required":false,"schema":{"type":"string","minLength":8,"maxLength":255}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ScenarioGraphSave"}}}},"description":"OrganizationAdmin source API; Player and unassigned content readers denied. Public UUIDs and stable node keys only. Published content is immutable. Draft graph saves reject structural errors and return full semantic validation; explicit validation persists a revision-bound result. External assets fail closed. Simulation is structural only. Archive is service-level; no new public route."}}
+  /game-sessions/{session_id}/scenario-assignments:
+    post:
+      tags:
+      - ScenarioAssignments
+      operationId: createScenarioAssignments
+      summary: createScenarioAssignments
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+    get:
+      tags:
+      - ScenarioAssignments
+      operationId: listScenarioAssignments
+      summary: listScenarioAssignments
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+  /game-sessions/{session_id}/scenario-assignments/{assignment_id}:
+    patch:
+      tags:
+      - ScenarioAssignments
+      operationId: updateScenarioAssignment
+      summary: updateScenarioAssignment
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: assignment_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /game-sessions/{session_id}/runtime:
+    {"get":{"tags":["Runtime"],"operationId":"getSessionRuntime","summary":"getSessionRuntime","security":[{"bearerAuth":[]}],"parameters":[{"name":"session_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"responses":{"200":{"description":"Authoritative safe state; identical retries return the saved logical result.","content":{"application/json":{"schema":{"$ref":"#/components/schemas/RuntimeSessionResponse"}}}},"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"}},"description":"PostgreSQL authoritative; public UUIDs only. Players are restricted to their frozen Session Team and bound Device. Completion accepts evidence, never client progression truth. Unimplemented verification/action domains fail closed."}}
+  /game-sessions/{session_id}/teams/{team_id}/runtime:
+    {"get":{"tags":["Runtime"],"operationId":"getTeamRuntime","summary":"getTeamRuntime","security":[{"bearerAuth":[]}],"parameters":[{"name":"session_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"team_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"responses":{"200":{"description":"Authoritative safe state; identical retries return the saved logical result.","content":{"application/json":{"schema":{"$ref":"#/components/schemas/RuntimeResponse"}}}},"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"}},"description":"PostgreSQL authoritative; public UUIDs only. Players are restricted to their frozen Session Team and bound Device. Completion accepts evidence, never client progression truth. Unimplemented verification/action domains fail closed."}}
+  /game-sessions/{session_id}/players/me/runtime:
+    {"get":{"tags":["Runtime"],"operationId":"getMyRuntime","summary":"getMyRuntime","security":[{"bearerAuth":[]}],"parameters":[{"name":"session_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"X-Device-Id","in":"header","required":true,"schema":{"type":"string","format":"uuid"}}],"responses":{"200":{"description":"Authoritative safe state; identical retries return the saved logical result.","content":{"application/json":{"schema":{"$ref":"#/components/schemas/RuntimeResponse"}}}},"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"}},"description":"PostgreSQL authoritative; public UUIDs only. Players are restricted to their frozen Session Team and bound Device. Completion accepts evidence, never client progression truth. Unimplemented verification/action domains fail closed."}}
+  /runtime/nodes/{node_instance_id}/start:
+    {"post":{"tags":["Runtime"],"operationId":"startRuntimeNode","summary":"startRuntimeNode","security":[{"bearerAuth":[]}],"parameters":[{"name":"node_instance_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8,"maxLength":255}},{"name":"X-Device-Id","in":"header","required":true,"schema":{"type":"string","format":"uuid"}}],"requestBody":{"required":false,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/RuntimeStart"}}}},"responses":{"200":{"description":"Authoritative safe state; identical retries return the saved logical result.","content":{"application/json":{"schema":{"$ref":"#/components/schemas/RuntimeCommandResponse"}}}},"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"}},"description":"PostgreSQL authoritative; public UUIDs only. Players are restricted to their frozen Session Team and bound Device. Completion accepts evidence, never client progression truth. Unimplemented verification/action domains fail closed."}}
+  /runtime/nodes/{node_instance_id}/submit:
+    {"post":{"tags":["Runtime"],"operationId":"submitRuntimeNode","summary":"submitRuntimeNode","security":[{"bearerAuth":[]}],"parameters":[{"name":"node_instance_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8,"maxLength":255}},{"name":"X-Device-Id","in":"header","required":true,"schema":{"type":"string","format":"uuid"}}],"requestBody":{"required":false,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/RuntimeEvidence"}}}},"responses":{"200":{"description":"Authoritative safe state; identical retries return the saved logical result.","content":{"application/json":{"schema":{"$ref":"#/components/schemas/RuntimeCommandResponse"}}}},"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"}},"description":"PostgreSQL authoritative; public UUIDs only. Players are restricted to their frozen Session Team and bound Device. Completion accepts evidence, never client progression truth. Unimplemented verification/action domains fail closed."}}
+  /runtime/nodes/{node_instance_id}/complete:
+    {"post":{"tags":["Runtime"],"operationId":"completeRuntimeNode","summary":"completeRuntimeNode","security":[{"bearerAuth":[]}],"parameters":[{"name":"node_instance_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8,"maxLength":255}},{"name":"X-Device-Id","in":"header","required":true,"schema":{"type":"string","format":"uuid"}}],"requestBody":{"required":false,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/RuntimeEvidence"}}}},"responses":{"200":{"description":"Authoritative safe state; identical retries return the saved logical result.","content":{"application/json":{"schema":{"$ref":"#/components/schemas/RuntimeCommandResponse"}}}},"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"}},"description":"PostgreSQL authoritative; public UUIDs only. Players are restricted to their frozen Session Team and bound Device. Completion accepts evidence, never client progression truth. Unimplemented verification/action domains fail closed."}}
+
+  /locations:
+    {"post":{"tags":["Locations"],"operationId":"submitLocation","summary":"submitLocation","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Authoritative result","content":{"application/json":{"schema":{"type":"object","required":["data"],"properties":{"data":{"$ref":"#/components/schemas/LocationAccepted"}}}}}}},"security":[{"bearerAuth":[]}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/LocationSample"}}}},"parameters":[{"name":"X-Device-Id","in":"header","required":true,"schema":{"type":"string","format":"uuid"}}],"description":"Self and bound Device only. Observations are OFFLINE_QUEUEABLE; completion truth is never accepted. Batch is ordered by sequence, bounded to 100, individually validated and atomically committed; one invalid observation rolls back the batch. Exact retries preserve receipt time; changed reuse returns 409 IDEMPOTENCY_CONFLICT."}}
+  /locations/batch:
+    {"post":{"tags":["Locations"],"operationId":"submitLocationBatch","summary":"submitLocationBatch","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Authoritative result","content":{"application/json":{"schema":{"type":"object","required":["data"],"properties":{"data":{"$ref":"#/components/schemas/LocationBatchAccepted"}}}}}}},"security":[{"bearerAuth":[]}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/LocationBatch"}}}},"parameters":[{"name":"X-Device-Id","in":"header","required":true,"schema":{"type":"string","format":"uuid"}}],"description":"Self and bound Device only. Observations are OFFLINE_QUEUEABLE; completion truth is never accepted. Batch is ordered by sequence, bounded to 100, individually validated and atomically committed; one invalid observation rolls back the batch. Exact retries preserve receipt time; changed reuse returns 409 IDEMPOTENCY_CONFLICT."}}
+  /game-sessions/{session_id}/players/me/location-policy:
+    {"get":{"tags":["Locations"],"operationId":"getLocationPolicy","summary":"getLocationPolicy","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Authoritative result","content":{"application/json":{"schema":{"type":"object","required":["data"],"properties":{"data":{"$ref":"#/components/schemas/LocationPolicy"}}}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"session_id","in":"path","required":true,"schema":{"type":"string"}},{"name":"X-Device-Id","in":"header","required":true,"schema":{"type":"string","format":"uuid"}}],"description":"Self and bound Device only. Observations are OFFLINE_QUEUEABLE; completion truth is never accepted. Batch is ordered by sequence, bounded to 100, individually validated and atomically committed; one invalid observation rolls back the batch. Exact retries preserve receipt time; changed reuse returns 409 IDEMPOTENCY_CONFLICT."}}
+  /checkpoints:
+    {"post":{"tags":["Checkpoints"],"operationId":"createCheckpoint","summary":"createCheckpoint","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"201":{"description":"Authoritative result","content":{"application/json":{"schema":{"type":"object","required":["data"],"properties":{"data":{"$ref":"#/components/schemas/Checkpoint"}}}}}}},"security":[{"bearerAuth":[]}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/CheckpointCreate"}}}},"description":"Organization content administration only; Players cannot enumerate hidden checkpoints. Published geometry/policy is immutable."},"get":{"tags":["Checkpoints"],"operationId":"listCheckpoints","summary":"listCheckpoints","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Authoritative result","content":{"application/json":{"schema":{"type":"object","required":["data"],"properties":{"data":{"$ref":"#/components/schemas/CheckpointList"}}}}}}},"security":[{"bearerAuth":[]}],"description":"Organization content administration only; Players cannot enumerate hidden checkpoints. Published geometry/policy is immutable.","parameters":[{"name":"limit","in":"query","schema":{"type":"integer","minimum":1,"maximum":100,"default":25}},{"name":"cursor","in":"query","schema":{"type":"string"}}]}}
+  /checkpoints/{checkpoint_id}:
+    {"get":{"tags":["Checkpoints"],"operationId":"getCheckpoint","summary":"getCheckpoint","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Authoritative result","content":{"application/json":{"schema":{"type":"object","required":["data"],"properties":{"data":{"$ref":"#/components/schemas/Checkpoint"}}}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"checkpoint_id","in":"path","required":true,"schema":{"type":"string"}}],"description":"Organization content administration only; Players cannot enumerate hidden checkpoints. Published geometry/policy is immutable."},"patch":{"tags":["Checkpoints"],"operationId":"updateCheckpoint","summary":"updateCheckpoint","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Authoritative result","content":{"application/json":{"schema":{"type":"object","required":["data"],"properties":{"data":{"$ref":"#/components/schemas/Checkpoint"}}}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"checkpoint_id","in":"path","required":true,"schema":{"type":"string"}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/CheckpointUpdate"}}}},"description":"Organization content administration only; Players cannot enumerate hidden checkpoints. Published geometry/policy is immutable."}}
+  /qr/scan:
+    post:
+      tags:
+      - QR
+      operationId: scanQr
+      summary: scanQr
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /ar/challenges/{challenge_id}:
+    get:
+      tags:
+      - AR
+      operationId: getArChallenge
+      summary: getArChallenge
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: challenge_id
+        in: path
+        required: true
+        schema:
+          type: string
+  /ar/challenges/{challenge_id}/start:
+    post:
+      tags:
+      - AR
+      operationId: startArChallenge
+      summary: startArChallenge
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: challenge_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /ar/challenges/{challenge_id}/complete:
+    post:
+      tags:
+      - AR
+      operationId: completeArChallenge
+      summary: completeArChallenge
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: challenge_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /game-sessions/{session_id}/live-challenges:
+    post:
+      tags:
+      - LiveChallenges
+      operationId: createLiveChallenge
+      summary: createLiveChallenge
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+    get:
+      tags:
+      - LiveChallenges
+      operationId: listLiveChallenges
+      summary: listLiveChallenges
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+  /live-challenges/{challenge_id}:
+    get:
+      tags:
+      - LiveChallenges
+      operationId: getLiveChallenge
+      summary: getLiveChallenge
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: challenge_id
+        in: path
+        required: true
+        schema:
+          type: string
+  /live-challenges/{challenge_id}/ack:
+    post:
+      tags:
+      - LiveChallenges
+      operationId: ackLiveChallenge
+      summary: ackLiveChallenge
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: challenge_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /live-challenges/{challenge_id}/start:
+    post:
+      tags:
+      - LiveChallenges
+      operationId: startLiveChallenge
+      summary: startLiveChallenge
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: challenge_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /live-challenges/{challenge_id}/submit:
+    post:
+      tags:
+      - LiveChallenges
+      operationId: submitLiveChallenge
+      summary: submitLiveChallenge
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: challenge_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /live-challenges/{challenge_id}/cancel:
+    post:
+      tags:
+      - LiveChallenges
+      operationId: cancelLiveChallenge
+      summary: cancelLiveChallenge
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: challenge_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /game-sessions/{session_id}/teams/{team_id}/hints:
+    get:
+      tags:
+      - Hints
+      operationId: getTeamHints
+      summary: getTeamHints
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: team_id
+        in: path
+        required: true
+        schema:
+          type: string
+  /runtime/nodes/{node_instance_id}/hints/consume:
+    post:
+      tags:
+      - Hints
+      operationId: consumeHint
+      summary: consumeHint
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: node_instance_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /game-sessions/{session_id}/leaderboard:
+    get:
+      tags:
+      - Scores
+      operationId: getLeaderboard
+      summary: getLeaderboard
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+  /game-sessions/{session_id}/teams/{team_id}/score:
+    get:
+      tags:
+      - Scores
+      operationId: getTeamScore
+      summary: getTeamScore
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: team_id
+        in: path
+        required: true
+        schema:
+          type: string
+  /game-sessions/{session_id}/teams/{team_id}/score-events:
+    get:
+      tags:
+      - Scores
+      operationId: getTeamScoreEvents
+      summary: getTeamScoreEvents
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: team_id
+        in: path
+        required: true
+        schema:
+          type: string
+  /game-sessions/{session_id}/teams/{team_id}/score-adjustments:
+    post:
+      tags:
+      - Scores
+      operationId: createScoreAdjustment
+      summary: createScoreAdjustment
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: team_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /game-sessions/{session_id}/billing:
+    get:
+      tags:
+      - Billing
+      operationId: getSessionBilling
+      summary: getSessionBilling
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+  /game-sessions/{session_id}/orders:
+    post:
+      tags:
+      - Billing
+      operationId: createSessionOrder
+      summary: createSessionOrder
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /orders/{order_id}:
+    get:
+      tags:
+      - Billing
+      operationId: getOrder
+      summary: getOrder
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: order_id
+        in: path
+        required: true
+        schema:
+          type: string
+  /orders/{order_id}/pay:
+    post:
+      tags:
+      - Billing
+      operationId: payOrder
+      summary: payOrder
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: order_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /payments/{payment_id}/verify:
+    post:
+      tags:
+      - Billing
+      operationId: verifyPayment
+      summary: verifyPayment
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: payment_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /payments/webhooks/{provider}:
+    post:
+      tags:
+      - Billing
+      operationId: paymentWebhook
+      summary: paymentWebhook
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security: []
+      parameters:
+      - name: provider
+        in: path
+        required: true
+        schema:
+          type: string
+  /orders/{order_id}/refund:
+    post:
+      tags:
+      - Billing
+      operationId: refundOrder
+      summary: refundOrder
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: order_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /store/products:
+    get:
+      tags:
+      - Store
+      operationId: listStoreProducts
+      summary: listStoreProducts
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+  /store/products/{product_id}:
+    get:
+      tags:
+      - Store
+      operationId: getStoreProduct
+      summary: getStoreProduct
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: product_id
+        in: path
+        required: true
+        schema:
+          type: string
+  /store/purchases:
+    post:
+      tags:
+      - Store
+      operationId: purchaseStoreProduct
+      summary: purchaseStoreProduct
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /store/purchases/{purchase_id}:
+    get:
+      tags:
+      - Store
+      operationId: getStorePurchase
+      summary: getStorePurchase
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: purchase_id
+        in: path
+        required: true
+        schema:
+          type: string
+  /game-sessions/{session_id}/teams/{team_id}/entitlements:
+    get:
+      tags:
+      - Store
+      operationId: getTeamEntitlements
+      summary: getTeamEntitlements
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: team_id
+        in: path
+        required: true
+        schema:
+          type: string
+  /game-sessions/{session_id}/control-room:
+    get:
+      tags:
+      - GameMaster
+      operationId: getControlRoom
+      summary: getControlRoom
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+  /game-sessions/{session_id}/teams/{team_id}/pause:
+    {"post":{"tags":["Runtime"],"operationId":"pauseTeam","summary":"pauseTeam","security":[{"bearerAuth":[]}],"parameters":[{"name":"session_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"team_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8,"maxLength":255}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/RuntimeReason"}}}},"responses":{"200":{"description":"Authoritative safe state; identical retries return the saved logical result.","content":{"application/json":{"schema":{"$ref":"#/components/schemas/RuntimeCommandResponse"}}}},"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"}},"description":"PostgreSQL authoritative; public UUIDs only. Players are restricted to their frozen Session Team and bound Device. Completion accepts evidence, never client progression truth. Unimplemented verification/action domains fail closed."}}
+
+  /game-sessions/{session_id}/teams/{team_id}/resume:
+    {"post":{"tags":["Runtime"],"operationId":"resumeTeam","summary":"resumeTeam","security":[{"bearerAuth":[]}],"parameters":[{"name":"session_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"team_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8,"maxLength":255}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/RuntimeReason"}}}},"responses":{"200":{"description":"Authoritative safe state; identical retries return the saved logical result.","content":{"application/json":{"schema":{"$ref":"#/components/schemas/RuntimeCommandResponse"}}}},"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"}},"description":"PostgreSQL authoritative; public UUIDs only. Players are restricted to their frozen Session Team and bound Device. Completion accepts evidence, never client progression truth. Unimplemented verification/action domains fail closed."}}
+
+  /game-sessions/{session_id}/messages:
+    post:
+      tags:
+      - GameMaster
+      operationId: sendSessionMessage
+      summary: sendSessionMessage
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /game-sessions/{session_id}/players/{player_id}/rebind-device:
+    post:
+      tags:
+      - GameMaster
+      operationId: gamemasterRebindDevice
+      summary: gamemasterRebindDevice
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: player_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /game-sessions/{session_id}/players/{player_id}/disqualify:
+    post:
+      tags:
+      - GameMaster
+      operationId: disqualifyPlayer
+      summary: disqualifyPlayer
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: player_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /game-sessions/{session_id}/anti-cheat/flags:
+    get:
+      tags:
+      - AntiCheat
+      operationId: listAntiCheatFlags
+      summary: listAntiCheatFlags
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+  /anti-cheat/flags/{flag_id}:
+    get:
+      tags:
+      - AntiCheat
+      operationId: getAntiCheatFlag
+      summary: getAntiCheatFlag
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: flag_id
+        in: path
+        required: true
+        schema:
+          type: string
+  /anti-cheat/flags/{flag_id}/review:
+    post:
+      tags:
+      - AntiCheat
+      operationId: reviewAntiCheatFlag
+      summary: reviewAntiCheatFlag
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: flag_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /anti-cheat/flags/{flag_id}/resolve:
+    post:
+      tags:
+      - AntiCheat
+      operationId: resolveAntiCheatFlag
+      summary: resolveAntiCheatFlag
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: flag_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /media:
+    post:
+      tags:
+      - Media
+      operationId: createMedia
+      summary: createMedia
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /media/{media_id}:
+    get:
+      tags:
+      - Media
+      operationId: getMedia
+      summary: getMedia
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: media_id
+        in: path
+        required: true
+        schema:
+          type: string
+    delete:
+      tags:
+      - Media
+      operationId: deleteMedia
+      summary: deleteMedia
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: media_id
+        in: path
+        required: true
+        schema:
+          type: string
+  "/organizations":
+    "get":
+      "tags":
+        - "Organizations"
+      "operationId": "listOrganizations"
+      "description": "SuperAdmin sees all organizations; OrganizationAdmin sees only active memberships in its own organizations. GameMaster, Staff and Player are denied. No arbitrary filtering or sorting."
+      "security":
+        - 
+          "bearerAuth": []
+
+      "responses":
+        "200":
+          "description": "Success"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/OrganizationListResponse"
+        "401":
+          "$ref": "#/components/responses/Unauthorized"
+        "403":
+          "$ref": "#/components/responses/Forbidden"
+        "404":
+          "$ref": "#/components/responses/NotFound"
+        "409":
+          "$ref": "#/components/responses/Conflict"
+        "422":
+          "$ref": "#/components/responses/ValidationError"
+      "parameters":
+        - 
+          "name": "limit"
+          "in": "query"
+          "schema":
+            "type": "integer"
+            "minimum": 1
+            "maximum": 100
+            "default": 25
+
+        - 
+          "name": "cursor"
+          "in": "query"
+          "schema":
+            "type": "string"
+            "maxLength": 512
+          "description": "Opaque cursor returned by this endpoint. Queries remain scoped on every page."
+
+    "post":
+      "tags":
+        - "Organizations"
+      "operationId": "createOrganization"
+      "description": "SuperAdmin only. Slug uniqueness prevents duplicate organization creation; conflicts return 409. Status and public ID are server assigned."
+      "security":
+        - 
+          "bearerAuth": []
+
+      "responses":
+        "201":
+          "description": "Created"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/OrganizationResponse"
+        "401":
+          "$ref": "#/components/responses/Unauthorized"
+        "403":
+          "$ref": "#/components/responses/Forbidden"
+        "404":
+          "$ref": "#/components/responses/NotFound"
+        "409":
+          "$ref": "#/components/responses/Conflict"
+        "422":
+          "$ref": "#/components/responses/ValidationError"
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "$ref": "#/components/schemas/OrganizationCreate"
+  "/organizations/{organization_id}":
+    "get":
+      "tags":
+        - "Organizations"
+      "operationId": "getOrganization"
+      "description": "SuperAdmin or own OrganizationAdmin receives organization metadata. Own active GameMaster receives only minimal context. Unrelated or invalid identifiers return 404 RESOURCE_NOT_FOUND. Settings are not exposed."
+      "security":
+        - 
+          "bearerAuth": []
+
+      "responses":
+        "200":
+          "description": "Success"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/OrganizationReadResponse"
+        "401":
+          "$ref": "#/components/responses/Unauthorized"
+        "403":
+          "$ref": "#/components/responses/Forbidden"
+        "404":
+          "$ref": "#/components/responses/NotFound"
+        "409":
+          "$ref": "#/components/responses/Conflict"
+        "422":
+          "$ref": "#/components/responses/ValidationError"
+      "parameters":
+        - 
+          "name": "organization_id"
+          "in": "path"
+          "required": true
+          "schema":
+            "type": "string"
+            "format": "uuid"
+
+    "patch":
+      "tags":
+        - "Organizations"
+      "operationId": "updateOrganization"
+      "description": "SuperAdmin or own OrganizationAdmin. Only name, slug and timezone_default are editable. Archived organizations reject writes with 409 STATE_TRANSITION_INVALID. Unchanged values create no duplicate event."
+      "security":
+        - 
+          "bearerAuth": []
+
+      "responses":
+        "200":
+          "description": "Success"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/OrganizationResponse"
+        "401":
+          "$ref": "#/components/responses/Unauthorized"
+        "403":
+          "$ref": "#/components/responses/Forbidden"
+        "404":
+          "$ref": "#/components/responses/NotFound"
+        "409":
+          "$ref": "#/components/responses/Conflict"
+        "422":
+          "$ref": "#/components/responses/ValidationError"
+      "parameters":
+        - 
+          "name": "organization_id"
+          "in": "path"
+          "required": true
+          "schema":
+            "type": "string"
+            "format": "uuid"
+
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "$ref": "#/components/schemas/OrganizationUpdate"
+  "/organizations/{organization_id}/members":
+    "get":
+      "tags":
+        - "Organizations"
+      "operationId": "listOrganizationMembers"
+      "description": "SuperAdmin or own OrganizationAdmin. Lists active memberships only, without email, mobile or internal IDs. Historical periods remain stored."
+      "security":
+        - 
+          "bearerAuth": []
+
+      "responses":
+        "200":
+          "description": "Success"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/OrganizationMemberListResponse"
+        "401":
+          "$ref": "#/components/responses/Unauthorized"
+        "403":
+          "$ref": "#/components/responses/Forbidden"
+        "404":
+          "$ref": "#/components/responses/NotFound"
+        "409":
+          "$ref": "#/components/responses/Conflict"
+        "422":
+          "$ref": "#/components/responses/ValidationError"
+      "parameters":
+        - 
+          "name": "organization_id"
+          "in": "path"
+          "required": true
+          "schema":
+            "type": "string"
+            "format": "uuid"
+
+        - 
+          "name": "limit"
+          "in": "query"
+          "schema":
+            "type": "integer"
+            "minimum": 1
+            "maximum": 100
+            "default": 25
+
+        - 
+          "name": "cursor"
+          "in": "query"
+          "schema":
+            "type": "string"
+            "maxLength": 512
+          "description": "Opaque cursor returned by this endpoint. Queries remain scoped on every page."
+
+    "post":
+      "tags":
+        - "Organizations"
+      "operationId": "addOrganizationMember"
+      "description": "SuperAdmin or own OrganizationAdmin. Existing user public UUID and canonical tenant role required. Duplicate active membership returns 409 CONFLICT. No payload ownership override or global role grant."
+      "security":
+        - 
+          "bearerAuth": []
+
+      "responses":
+        "201":
+          "description": "Created"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/OrganizationMemberResponse"
+        "401":
+          "$ref": "#/components/responses/Unauthorized"
+        "403":
+          "$ref": "#/components/responses/Forbidden"
+        "404":
+          "$ref": "#/components/responses/NotFound"
+        "409":
+          "$ref": "#/components/responses/Conflict"
+        "422":
+          "$ref": "#/components/responses/ValidationError"
+      "parameters":
+        - 
+          "name": "organization_id"
+          "in": "path"
+          "required": true
+          "schema":
+            "type": "string"
+            "format": "uuid"
+
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "$ref": "#/components/schemas/OrganizationMemberCreate"
+  "/organizations/{organization_id}/members/{user_id}":
+    "delete":
+      "tags":
+        - "Organizations"
+      "operationId": "removeOrganizationMember"
+      "description": "SuperAdmin or own OrganizationAdmin. Marks the active membership REMOVED and records left_at; never deletes history. A missing active membership returns 404. Effective tenant authorization is revoked immediately."
+      "security":
+        - 
+          "bearerAuth": []
+
+      "responses":
+        "204":
+          "description": "Membership removed; historical record retained."
+        "401":
+          "$ref": "#/components/responses/Unauthorized"
+        "403":
+          "$ref": "#/components/responses/Forbidden"
+        "404":
+          "$ref": "#/components/responses/NotFound"
+        "409":
+          "$ref": "#/components/responses/Conflict"
+        "422":
+          "$ref": "#/components/responses/ValidationError"
+      "parameters":
+        - 
+          "name": "organization_id"
+          "in": "path"
+          "required": true
+          "schema":
+            "type": "string"
+            "format": "uuid"
+
+        - 
+          "name": "user_id"
+          "in": "path"
+          "required": true
+          "schema":
+            "type": "string"
+            "format": "uuid"
+
+      "requestBody":
+        "required": false
+        "content":
+          "application/json":
+            "schema":
+              "$ref": "#/components/schemas/OrganizationMemberRemoval"
+  /audit-events:
+    get:
+      tags:
+      - Audit
+      operationId: listAuditEvents
+      summary: listAuditEvents
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+  /audit-events/{event_id}:
+    get:
+      tags:
+      - Audit
+      operationId: getAuditEvent
+      summary: getAuditEvent
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: event_id
+        in: path
+        required: true
+        schema:
+          type: string
+components:
+  parameters:
+    IdentityDeviceHeader:
+      name: X-Device-Id
+      in: header
+      required: false
+      description: If present, must resolve to an owned non-revoked device UUID. Token identity and device identity remain separate.
+      schema: {type: string, format: uuid}
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Token
+  schemas:
+    ScenarioCreate:
+      {"type":"object","additionalProperties":false,"properties":{"organization_id":{"type":"string","format":"uuid"},"title":{"type":"string","maxLength":255},"description":{"type":["string","null"],"maxLength":10000},"theme":{"type":["string","null"],"maxLength":255},"reason":{"type":["string","null"],"maxLength":1000}},"required":["organization_id","title"]}
+    ScenarioUpdate:
+      {"type":"object","additionalProperties":false,"properties":{"title":{"type":"string","maxLength":255},"description":{"type":["string","null"],"maxLength":10000},"theme":{"type":["string","null"],"maxLength":255},"reason":{"type":["string","null"],"maxLength":1000}}}
+    ScenarioVersionCreate:
+      {"type":"object","additionalProperties":false,"properties":{"difficulty":{"type":["string","null"],"maxLength":100},"estimated_duration_seconds":{"type":["integer","null"],"minimum":1,"maximum":2147483647},"estimated_distance_meters":{"type":["number","null"],"minimum":0,"maximum":10000000},"physical_effort":{"type":["string","null"],"maxLength":100},"challenge_mix":{"type":["object","array"],"additionalProperties":{"type":"number","minimum":0}},"reason":{"type":["string","null"],"maxLength":1000}}}
+    ScenarioVersionUpdate:
+      {"type":"object","additionalProperties":false,"properties":{"difficulty":{"type":["string","null"],"maxLength":100},"estimated_duration_seconds":{"type":["integer","null"],"minimum":1,"maximum":2147483647},"estimated_distance_meters":{"type":["number","null"],"minimum":0,"maximum":10000000},"physical_effort":{"type":["string","null"],"maxLength":100},"challenge_mix":{"type":["object","array"],"additionalProperties":{"type":"number","minimum":0}},"revision_token":{"type":"string","format":"uuid"},"reason":{"type":["string","null"],"maxLength":1000}},"required":["revision_token"]}
+    ScenarioPublish:
+      {"type":"object","additionalProperties":false,"properties":{"revision_token":{"type":"string","format":"uuid"},"reason":{"type":["string","null"],"maxLength":1000}},"required":["revision_token"]}
+    ScenarioRun:
+      {"type":"object","additionalProperties":false,"properties":{"revision_token":{"type":"string","format":"uuid"},"reason":{"type":["string","null"],"maxLength":1000}}}
+    ScenarioReason:
+      {"type":"object","additionalProperties":false,"properties":{"reason":{"type":["string","null"],"maxLength":1000}}}
+    ScenarioNode:
+      {"type":"object","additionalProperties":false,"properties":{"node_key":{"type":"string","pattern":"^[A-Za-z][A-Za-z0-9_-]{0,99}$"},"node_type":{"type":"string","enum":["Start","Finish","Branch","Condition","Wait","Timer","Subflow","Message","Show Image","Show Video","GPS / Location","Checkpoint","QR","Puzzle","Password","Text Answer","Multiple Choice","Assign Roles","Swap Roles","Specific Player","Random Player","Team Together","Split Team","Add Score","Subtract Score","Give Hint","Live Challenge Trigger","AR Challenge"]},"title":{"type":["string","null"]},"config":{"type":["object","array"],"description":"Registry-validated type-specific content configuration. Empty config is accepted as {} or []. Runtime uses registered handlers; future domain adapters fail closed."},"position_x":{"type":["number","null"]},"position_y":{"type":["number","null"]}},"required":["node_key","node_type","config"]}
+    ScenarioEdge:
+      {"type":"object","additionalProperties":false,"properties":{"edge_key":{"type":"string","pattern":"^[A-Za-z][A-Za-z0-9_-]{0,99}$"},"from_node":{"type":"string","pattern":"^[A-Za-z][A-Za-z0-9_-]{0,99}$"},"to_node":{"type":"string","pattern":"^[A-Za-z][A-Za-z0-9_-]{0,99}$"},"priority":{"type":"integer","minimum":0,"maximum":2147483647},"condition_group_id":{"type":["string","null"],"format":"uuid"},"metadata":{"type":["object","array"],"maxProperties":0,"maxItems":0}},"required":["edge_key","from_node","to_node","priority"]}
+    ScenarioVariable:
+      {"type":"object","additionalProperties":false,"properties":{"key":{"type":"string","pattern":"^[A-Za-z][A-Za-z0-9_]{0,99}$"},"type":{"enum":["STRING","INTEGER","DECIMAL","BOOLEAN","DATETIME","JSON"]},"scope":{"enum":["SCENARIO","TEAM","PLAYER","NODE"]},"default_value":[],"writable":{"type":"boolean"}},"required":["key","type","scope","default_value","writable"]}
+    ScenarioCondition:
+      {"type":"object","additionalProperties":false,"properties":{"condition_group_id":{"type":"string","format":"uuid"},"left_operand":{"type":"string"},"operator":{"enum":["==","!=",">",">=","<","<=","IN","NOT_IN","EXISTS","NOT_EXISTS"]},"right_operand_json":[],"value_type":{"enum":["STRING","INTEGER","DECIMAL","BOOLEAN","DATETIME","JSON"]},"position":{"type":"integer","minimum":0}},"required":["condition_group_id","left_operand","operator","right_operand_json","value_type","position"]}
+    ScenarioSubflowBinding:
+      {"type":"object","additionalProperties":false,"properties":{"node_key":{"type":"string","pattern":"^[A-Za-z][A-Za-z0-9_-]{0,99}$"},"subflow_id":{"type":"string","format":"uuid"},"version_no":{"type":"integer","minimum":1}},"required":["node_key","subflow_id","version_no"]}
+    ScenarioGraph:
+      {"type":"object","additionalProperties":false,"properties":{"nodes":{"type":"array","items":{"$ref":"#/components/schemas/ScenarioNode"},"maxItems":1000},"edges":{"type":"array","items":{"$ref":"#/components/schemas/ScenarioEdge"},"maxItems":5000},"variables":{"type":"array","items":{"$ref":"#/components/schemas/ScenarioVariable"},"maxItems":500},"conditions":{"type":"array","items":{"$ref":"#/components/schemas/ScenarioCondition"},"maxItems":2000},"subflows":{"type":"array","items":{"$ref":"#/components/schemas/ScenarioSubflowBinding"},"maxItems":1000}},"required":["nodes","edges"]}
+    ScenarioGraphSave:
+      {"type":"object","additionalProperties":false,"properties":{"revision_token":{"type":"string","format":"uuid"},"nodes":{"type":"array","items":{"$ref":"#/components/schemas/ScenarioNode"},"maxItems":1000},"edges":{"type":"array","items":{"$ref":"#/components/schemas/ScenarioEdge"},"maxItems":5000},"variables":{"type":"array","items":{"$ref":"#/components/schemas/ScenarioVariable"},"maxItems":500},"conditions":{"type":"array","items":{"$ref":"#/components/schemas/ScenarioCondition"},"maxItems":2000},"subflows":{"type":"array","items":{"$ref":"#/components/schemas/ScenarioSubflowBinding"},"maxItems":1000},"reason":{"type":["string","null"],"maxLength":1000}},"required":["revision_token","nodes","edges"]}
+    ScenarioResource:
+      {"type":"object","additionalProperties":false,"properties":{"id":{"type":"string","format":"uuid"},"organization_id":{"type":"string","format":"uuid"},"title":{"type":"string"},"description":{"type":["string","null"]},"theme":{"type":["string","null"]},"status":{"enum":["DRAFT","PUBLISHED","ARCHIVED"]},"created_at":{"type":["string","null"]},"updated_at":{"type":["string","null"]},"archived_at":{"type":["string","null"]}}}
+    ScenarioVersionResource:
+      {"type":"object","additionalProperties":false,"properties":{"id":{"type":"string","format":"uuid"},"scenario_id":{"type":"string","format":"uuid"},"version_no":{"type":"integer"},"status":{"enum":["DRAFT","PUBLISHED","ARCHIVED"]},"revision_token":{"type":"string","format":"uuid"},"difficulty":{"type":["string","null"],"maxLength":100},"estimated_duration_seconds":{"type":["integer","null"],"minimum":1,"maximum":2147483647},"estimated_distance_meters":{"type":["number","null"],"minimum":0,"maximum":10000000},"physical_effort":{"type":["string","null"],"maxLength":100},"challenge_mix":{"type":["object","array"],"additionalProperties":{"type":"number","minimum":0}},"published_at":{"type":["string","null"]},"published_by":{"type":["string","null"],"format":"uuid"},"created_at":{"type":["string","null"]},"updated_at":{"type":["string","null"]}}}
+    ScenarioValidation:
+      {"type":"object","additionalProperties":false,"properties":{"status":{"enum":["PASS","FAIL"]},"revision_token":{"type":"string","format":"uuid"},"errors":{"type":"array","items":{"type":"object","additionalProperties":false,"properties":{"code":{"type":"string"},"path":{"type":"string"}},"required":["code","path"]}},"warnings":{"type":"array","items":[]}}}
+    ScenarioGraphResult:
+      {"type":"object","additionalProperties":false,"properties":{"revision_token":{"type":"string","format":"uuid"},"graph":{"$ref":"#/components/schemas/ScenarioGraph"},"validation":{"$ref":"#/components/schemas/ScenarioValidation"},"randomization":{"type":"object","additionalProperties":false,"properties":{"seed_required":{"type":"boolean"},"seed_owner":{"const":"TeamScenarioInstance"},"seed_frozen_at":{"const":"instance_creation"},"runtime_handler_available":{"const":true}}}}}
+    ScenarioSimulation:
+      {"type":"object","additionalProperties":false,"properties":{"mode":{"const":"STRUCTURAL_ONLY"},"revision_token":{"type":"string","format":"uuid"},"status":{"enum":["PASS","FAIL"]},"errors":{"type":"array","items":{"type":"object","additionalProperties":false,"properties":{"code":{"type":"string"},"path":{"type":"string"}}}},"warnings":{"type":"array","items":[]},"reachable_nodes":{"type":"array","items":{"type":"string"}},"branches":{"type":"array","items":{"type":"string"}},"dead_ends":{"type":"array","items":{"type":"string"}},"runtime_executed":{"const":false}}}
+    GameCreate: {"type":"object","additionalProperties":false,"properties":{"organization_id":{"type":"string","format":"uuid"},"name":{"type":"string","minLength":1,"maxLength":255},"slug":{"type":"string","maxLength":100,"pattern":"^[a-z0-9]+(?:-[a-z0-9]+)*$"},"description":{"type":"string","nullable":true,"maxLength":10000},"default_timezone":{"type":"string"},"status":{"type":"string","enum":["DRAFT","ACTIVE"]},"reason":{"type":"string","maxLength":1000,"nullable":true}},"required":["organization_id","name","slug","default_timezone"]}
+    GameUpdate: {"type":"object","additionalProperties":false,"properties":{"name":{"type":"string","minLength":1,"maxLength":255},"slug":{"type":"string","maxLength":100,"pattern":"^[a-z0-9]+(?:-[a-z0-9]+)*$"},"description":{"type":"string","nullable":true,"maxLength":10000},"default_timezone":{"type":"string"},"status":{"type":"string","enum":["DRAFT","ACTIVE"]},"reason":{"type":"string","maxLength":1000,"nullable":true}},"required":[]}
+    GameReason: {"type":"object","additionalProperties":false,"properties":{"reason":{"type":"string","maxLength":1000,"nullable":true}},"required":[]}
+    Game: {"type":"object","additionalProperties":false,"properties":{"id":{"type":"string","format":"uuid"},"organization_id":{"type":"string","format":"uuid"},"name":{"type":"string","minLength":1,"maxLength":255},"slug":{"type":"string","maxLength":100,"pattern":"^[a-z0-9]+(?:-[a-z0-9]+)*$"},"description":{"type":"string","nullable":true,"maxLength":10000},"default_timezone":{"type":"string"},"status":{"type":"string","enum":["DRAFT","ACTIVE","ARCHIVED"]},"created_at":{"type":"string","format":"date-time","nullable":true},"updated_at":{"type":"string","format":"date-time","nullable":true},"archived_at":{"type":"string","format":"date-time","nullable":true}},"required":["id","organization_id","name","slug","status","default_timezone"]}
+    SessionCreate: {"type":"object","additionalProperties":false,"properties":{"game_id":{"type":"string","format":"uuid"},"timezone":{"type":"string"},"registration_opens_at":{"type":"string","format":"date-time","nullable":true},"registration_closes_at":{"type":"string","format":"date-time","nullable":true},"scheduled_start_at":{"type":"string","format":"date-time","nullable":true},"reason":{"type":"string","maxLength":1000,"nullable":true}},"required":["game_id"]}
+    SessionUpdate: {"type":"object","additionalProperties":false,"properties":{"timezone":{"type":"string"},"registration_opens_at":{"type":"string","format":"date-time","nullable":true},"registration_closes_at":{"type":"string","format":"date-time","nullable":true},"scheduled_start_at":{"type":"string","format":"date-time","nullable":true},"reason":{"type":"string","maxLength":1000,"nullable":true}},"required":[]}
+    SessionRegisterTeam: {"type":"object","additionalProperties":false,"properties":{"team_id":{"type":"string","format":"uuid"},"reason":{"type":"string","maxLength":1000,"nullable":true}},"required":["team_id"]}
+    SessionDevice: {"type":"object","additionalProperties":false,"properties":{"device_id":{"type":"string","format":"uuid"},"user_id":{"type":"string","format":"uuid"},"reason":{"type":"string","maxLength":1000,"nullable":true}},"required":["device_id"]}
+    SessionReady: {"type":"object","additionalProperties":false,"properties":{"ready":{"type":"boolean"}},"required":["ready"]}
+    SessionCancel: {"type":"object","additionalProperties":false,"properties":{"reason":{"type":"string","minLength":1,"maxLength":1000},"emergency":{"type":"boolean"}},"required":["reason"]}
+    SessionPlayer: {"type":"object","additionalProperties":false,"properties":{"id":{"type":"string","format":"uuid"},"user":{"type":"object","additionalProperties":false,"properties":{"id":{"type":"string","format":"uuid"},"name":{"type":"string"}},"required":["id","name"]},"status":{"type":"string","enum":["JOINED","READY","ACTIVE","DISCONNECTED","REMOVED","DISQUALIFIED","FINISHED"]},"device_bound":{"type":"boolean"},"roster_frozen_at":{"type":"string","format":"date-time","nullable":true}},"required":["id","user","status","device_bound","roster_frozen_at"]}
+    SessionTeam: {"type":"object","additionalProperties":false,"properties":{"team_id":{"type":"string","format":"uuid"},"name":{"type":"string"},"status":{"type":"string","enum":["REGISTERED","READY","ACTIVE","FINISHED","REMOVED","DISQUALIFIED"]},"player_count":{"type":"integer","minimum":0,"maximum":8},"players":{"type":"array","items":{"$ref":"#/components/schemas/SessionPlayer"}}},"required":["team_id","name","status","player_count","players"]}
+    GameSession: {"type":"object","additionalProperties":false,"properties":{"id":{"type":"string","format":"uuid"},"organization_id":{"type":"string","format":"uuid"},"game_id":{"type":"string","format":"uuid"},"status":{"type":"string","enum":["DRAFT","REGISTRATION","READY","RUNNING","PAUSED","FINISHED","CANCELLED"]},"timezone":{"type":"string"},"registration_opens_at":{"type":"string","format":"date-time","nullable":true},"registration_closes_at":{"type":"string","format":"date-time","nullable":true},"scheduled_start_at":{"type":"string","format":"date-time","nullable":true},"started_at":{"type":"string","format":"date-time","nullable":true},"finished_at":{"type":"string","format":"date-time","nullable":true},"cancelled_at":{"type":"string","format":"date-time","nullable":true},"created_at":{"type":"string","format":"date-time","nullable":true},"updated_at":{"type":"string","format":"date-time","nullable":true},"teams":{"type":"array","items":{"$ref":"#/components/schemas/SessionTeam"}}},"required":["id","organization_id","game_id","status","timezone","teams"]}
+    SessionTimelineEvent: {"type":"object","additionalProperties":false,"properties":{"event_id":{"type":"string","format":"uuid"},"event_type":{"type":"string"},"occurred_at":{"type":"string","format":"date-time","nullable":true},"reason":{"type":"string","maxLength":1000,"nullable":true},"request_id":{"type":"string","nullable":true}},"required":["event_id","event_type","occurred_at"]}
+    SessionStartResult: {"type":"object","additionalProperties":false,"properties":{"session":{"$ref":"#/components/schemas/GameSession"},"frozen_rosters":{"type":"array","items":{"type":"object","description":"Immutable Team roster with public player/device IDs, readiness, version, frozen_at and server-derived dependency references."}},"runtime_instances":{"type":"object","additionalProperties":{"type":"string"}},"started_at":{"type":"string","format":"date-time","nullable":true}},"required":["session","frozen_rosters","runtime_instances","started_at"]}
+    GameSuccess: {"type":"object","additionalProperties":false,"properties":{"data":{"$ref":"#/components/schemas/Game"}},"required":["data"]}
+    GameSessionSuccess: {"type":"object","additionalProperties":false,"properties":{"data":{"$ref":"#/components/schemas/GameSession"}},"required":["data"]}
+    SessionStartResultSuccess: {"type":"object","additionalProperties":false,"properties":{"data":{"$ref":"#/components/schemas/SessionStartResult"}},"required":["data"]}
+    GameList: {"type":"object","additionalProperties":false,"properties":{"data":{"type":"array","items":{"$ref":"#/components/schemas/Game"}},"meta":{"type":"object","additionalProperties":false,"properties":{"pagination":{"type":"object","additionalProperties":false,"properties":{"cursor":{"type":"string","nullable":true},"next_cursor":{"type":"string","nullable":true},"has_more":{"type":"boolean"}},"required":["cursor","next_cursor","has_more"]}},"required":["pagination"]}},"required":["data","meta"]}
+    GameSessionList: {"type":"object","additionalProperties":false,"properties":{"data":{"type":"array","items":{"$ref":"#/components/schemas/GameSession"}},"meta":{"type":"object","additionalProperties":false,"properties":{"pagination":{"type":"object","additionalProperties":false,"properties":{"cursor":{"type":"string","nullable":true},"next_cursor":{"type":"string","nullable":true},"has_more":{"type":"boolean"}},"required":["cursor","next_cursor","has_more"]}},"required":["pagination"]}},"required":["data","meta"]}
+    SessionTimelineEventList: {"type":"object","additionalProperties":false,"properties":{"data":{"type":"array","items":{"$ref":"#/components/schemas/SessionTimelineEvent"}},"meta":{"type":"object","additionalProperties":false,"properties":{"pagination":{"type":"object","additionalProperties":false,"properties":{"cursor":{"type":"string","nullable":true},"next_cursor":{"type":"string","nullable":true},"has_more":{"type":"boolean"}},"required":["cursor","next_cursor","has_more"]}},"required":["pagination"]}},"required":["data","meta"]}
+    "OrganizationContext":
+      "type": "object"
+      "additionalProperties": false
+      "required":
+        - "id"
+        - "name"
+        - "slug"
+        - "status"
+        - "timezone_default"
+      "properties":
+        "id":
+          "type": "string"
+          "format": "uuid"
+        "name":
+          "type": "string"
+        "slug":
+          "type": "string"
+        "status":
+          "type": "string"
+          "enum":
+            - "ACTIVE"
+            - "ARCHIVED"
+        "timezone_default":
+          "type": "string"
+    "Organization":
+      "type": "object"
+      "additionalProperties": false
+      "required":
+        - "id"
+        - "name"
+        - "slug"
+        - "status"
+        - "timezone_default"
+        - "created_at"
+        - "updated_at"
+        - "archived_at"
+      "properties":
+        "id":
+          "type": "string"
+          "format": "uuid"
+        "name":
+          "type": "string"
+        "slug":
+          "type": "string"
+        "status":
+          "type": "string"
+          "enum":
+            - "ACTIVE"
+            - "ARCHIVED"
+        "timezone_default":
+          "type": "string"
+        "created_at":
+          "type": "string"
+          "format": "date-time"
+        "updated_at":
+          "type": "string"
+          "format": "date-time"
+        "archived_at":
+          "type":
+            - "string"
+            - "null"
+          "format": "date-time"
+    "OrganizationCreate":
+      "type": "object"
+      "additionalProperties": false
+      "required":
+        - "name"
+        - "slug"
+      "properties":
+        "name":
+          "type": "string"
+          "minLength": 1
+          "maxLength": 255
+        "slug":
+          "type": "string"
+          "maxLength": 100
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        "timezone_default":
+          "type": "string"
+          "maxLength": 64
+          "description": "IANA timezone; defaults to UTC on creation."
+        "reason":
+          "type":
+            - "string"
+            - "null"
+          "maxLength": 1000
+    "OrganizationUpdate":
+      "type": "object"
+      "additionalProperties": false
+      "anyOf":
+        - 
+          "required":
+            - "name"
+
+        - 
+          "required":
+            - "slug"
+
+        - 
+          "required":
+            - "timezone_default"
+
+      "properties":
+        "name":
+          "type": "string"
+          "minLength": 1
+          "maxLength": 255
+        "slug":
+          "type": "string"
+          "maxLength": 100
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        "timezone_default":
+          "type": "string"
+          "maxLength": 64
+          "description": "IANA timezone; defaults to UTC on creation."
+        "reason":
+          "type":
+            - "string"
+            - "null"
+          "maxLength": 1000
+    "OrganizationMemberCreate":
+      "type": "object"
+      "additionalProperties": false
+      "required":
+        - "user_id"
+        - "role"
+      "properties":
+        "user_id":
+          "type": "string"
+          "format": "uuid"
+        "role":
+          "type": "string"
+          "enum":
+            - "ORGANIZATION_ADMIN"
+            - "GAMEMASTER"
+            - "STAFF"
+        "reason":
+          "type":
+            - "string"
+            - "null"
+          "maxLength": 1000
+    "OrganizationMemberRemoval":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "reason":
+          "type":
+            - "string"
+            - "null"
+          "maxLength": 1000
+    "OrganizationMember":
+      "type": "object"
+      "additionalProperties": false
+      "required":
+        - "user_id"
+        - "name"
+        - "role"
+        - "status"
+        - "joined_at"
+        - "left_at"
+      "properties":
+        "user_id":
+          "type": "string"
+          "format": "uuid"
+        "name":
+          "type": "string"
+        "role":
+          "type": "string"
+          "enum":
+            - "ORGANIZATION_ADMIN"
+            - "GAMEMASTER"
+            - "STAFF"
+        "status":
+          "type": "string"
+          "enum":
+            - "ACTIVE"
+            - "SUSPENDED"
+            - "LEFT"
+            - "REMOVED"
+        "joined_at":
+          "type": "string"
+          "format": "date-time"
+        "left_at":
+          "type":
+            - "string"
+            - "null"
+          "format": "date-time"
+    "OrganizationPagination":
+      "type": "object"
+      "required":
+        - "pagination"
+      "properties":
+        "pagination":
+          "type": "object"
+          "required":
+            - "cursor"
+            - "next_cursor"
+            - "has_more"
+          "properties":
+            "cursor":
+              "type":
+                - "string"
+                - "null"
+            "next_cursor":
+              "type":
+                - "string"
+                - "null"
+            "has_more":
+              "type": "boolean"
+    "OrganizationResponse":
+      "type": "object"
+      "required":
+        - "data"
+      "properties":
+        "data":
+          "$ref": "#/components/schemas/Organization"
+    "OrganizationReadResponse":
+      "type": "object"
+      "required":
+        - "data"
+      "properties":
+        "data":
+          "oneOf":
+            - 
+              "$ref": "#/components/schemas/Organization"
+
+            - 
+              "$ref": "#/components/schemas/OrganizationContext"
+
+    "OrganizationListResponse":
+      "type": "object"
+      "required":
+        - "data"
+        - "meta"
+      "properties":
+        "data":
+          "type": "array"
+          "items":
+            "$ref": "#/components/schemas/Organization"
+        "meta":
+          "$ref": "#/components/schemas/OrganizationPagination"
+    "OrganizationMemberResponse":
+      "type": "object"
+      "required":
+        - "data"
+      "properties":
+        "data":
+          "$ref": "#/components/schemas/OrganizationMember"
+    "OrganizationMemberListResponse":
+      "type": "object"
+      "required":
+        - "data"
+        - "meta"
+      "properties":
+        "data":
+          "type": "array"
+          "items":
+            "$ref": "#/components/schemas/OrganizationMember"
+        "meta":
+          "$ref": "#/components/schemas/OrganizationPagination"
+    IdentityLogin:
+      type: object
+      additionalProperties: false
+      required: [password, device_uuid, device_name, platform, app_version]
+      anyOf:
+      - required: [email]
+        properties:
+          email: {type: string, minLength: 1}
+      - required: [mobile]
+        properties:
+          mobile: {type: string, minLength: 1}
+      properties:
+        email: {type: [string, 'null'], format: email, maxLength: 255}
+        mobile: {type: [string, 'null'], pattern: '^\+?[0-9]{7,15}$'}
+        password: {type: string, minLength: 1, maxLength: 72, writeOnly: true, description: Maximum 72 UTF-8 bytes.}
+        device_uuid: {type: string, format: uuid}
+        device_name: {type: string, minLength: 1, maxLength: 255}
+        platform: {type: string, minLength: 1, maxLength: 32}
+        app_version: {type: string, minLength: 1, maxLength: 64}
+    IdentityRegistration:
+      type: object
+      additionalProperties: false
+      required: [name, password, device_uuid, device_name, platform, app_version]
+      anyOf:
+      - required: [email]
+        properties:
+          email: {type: string, minLength: 1}
+      - required: [mobile]
+        properties:
+          mobile: {type: string, minLength: 1}
+      properties:
+        name: {type: string, minLength: 1, maxLength: 255}
+        email: {type: [string, 'null'], format: email, maxLength: 255}
+        mobile: {type: [string, 'null'], pattern: '^\+?[0-9]{7,15}$'}
+        password: {type: string, minLength: 12, maxLength: 72, writeOnly: true, description: Maximum 72 UTF-8 bytes.}
+        device_uuid: {type: string, format: uuid}
+        device_name: {type: string, minLength: 1, maxLength: 255}
+        platform: {type: string, minLength: 1, maxLength: 32}
+        app_version: {type: string, minLength: 1, maxLength: 64}
+    IdentityAuthenticationResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [user, token, device]
+          properties:
+            user:
+              $ref: '#/components/schemas/IdentityUser'
+            token: {type: string, description: Opaque Bearer secret returned only at creation.}
+            device:
+              $ref: '#/components/schemas/IdentityDevice'
+    IdentityUser:
+      type: object
+      additionalProperties: false
+      required: [id, name, email, mobile, status, roles, last_login_at, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        email: {type: [string, 'null'], format: email}
+        mobile: {type: [string, 'null']}
+        status: {type: string, enum: [ACTIVE, SUSPENDED, BLOCKED]}
+        roles:
+          type: array
+          items: {type: string, enum: [PLAYER]}
+        last_login_at: {type: [string, 'null'], format: date-time}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    IdentityDevice:
+      type: object
+      additionalProperties: false
+      required: [id, device_uuid, device_name, platform, app_version, last_seen_at, revoked_at, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        device_uuid: {type: string, format: uuid}
+        device_name: {type: string}
+        platform: {type: string}
+        app_version: {type: string}
+        last_seen_at: {type: [string, 'null'], format: date-time}
+        revoked_at: {type: [string, 'null'], format: date-time}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    RuntimeStart: {"type":"object","additionalProperties":false,"properties":{}}
+    RuntimeEvidence: {"type":"object","additionalProperties":false,"properties":{"answer":{"type":"string","maxLength":1000},"acknowledged":{"type":"boolean"},"selected_option_refs":{"type":"array","maxItems":20,"uniqueItems":true,"items":{"type":"string","maxLength":1000}},"evidence_ref":{"type":"string","maxLength":2048}}}
+    RuntimeReason: {"type":"object","additionalProperties":false,"required":["reason"],"properties":{"reason":{"type":"string","minLength":1,"maxLength":1000}}}
+    RuntimeNode: {"type":"object","additionalProperties":false,"required":["id","node_key","node_type","title","status","config","attempt_count","version_no","started_at","completed_at"],"properties":{"id":{"type":"string","format":"uuid"},"node_key":{"type":"string"},"node_type":{"type":"string"},"title":{"type":["string","null"]},"status":{"enum":["AVAILABLE","ACTIVE","COMPLETED","FAILED","SKIPPED"]},"config":{"type":["object","array"],"description":"Allow-listed presentation fields only. No answers, conditions, hidden variables or admin config."},"attempt_count":{"type":"integer","minimum":0},"version_no":{"type":"integer","minimum":1},"started_at":{"type":["string","null"],"format":"date-time"},"completed_at":{"type":["string","null"],"format":"date-time"},"progress":{"type":["integer","null"],"minimum":0},"selected_player_id":{"type":["string","null"],"format":"uuid"}}}
+    RuntimeTimer: {"type":"object","additionalProperties":false,"required":["id","node_instance_id","status","duration_seconds","effective_elapsed_seconds"],"properties":{"id":{"type":"string","format":"uuid"},"node_instance_id":{"type":["string","null"],"format":"uuid"},"status":{"enum":["NOT_STARTED","RUNNING","PAUSED","FINISHED","CANCELLED"]},"duration_seconds":{"type":["integer","null"]},"effective_elapsed_seconds":{"type":"integer","minimum":0}}}
+    RuntimeRole: {"type":"object","additionalProperties":false,"required":["id","player_id","role_code","slot_no"],"properties":{"id":{"type":"string","format":"uuid"},"player_id":{"type":"string","format":"uuid"},"role_code":{"enum":["SCANNER","NAVIGATOR","DECODER","AR_OPERATOR"]},"slot_no":{"type":"integer","minimum":1,"maximum":4}}}
+    RuntimePlayer: {"type":["object","null"],"additionalProperties":false,"properties":{"id":{"type":"string","format":"uuid"},"participation_status":{"type":"string"},"device_id":{"type":["string","null"],"format":"uuid"},"support":{"type":"boolean"}}}
+    RuntimeInstance: {"type":"object","additionalProperties":false,"required":["id","session_id","team_id","scenario_version_id","status","effective_elapsed_seconds","started_at","completed_at","nodes","active_node_ids","roles","player","timers"],"properties":{"id":{"type":"string","format":"uuid"},"session_id":{"type":"string","format":"uuid"},"team_id":{"type":"string","format":"uuid"},"scenario_version_id":{"type":"string","format":"uuid"},"status":{"enum":["NOT_STARTED","ACTIVE","PAUSED","COMPLETED","FAILED","CANCELLED"]},"effective_elapsed_seconds":{"type":"integer","minimum":0},"started_at":{"type":["string","null"],"format":"date-time"},"completed_at":{"type":["string","null"],"format":"date-time"},"nodes":{"type":"array","items":{"$ref":"#/components/schemas/RuntimeNode"}},"active_node_ids":{"type":"array","items":{"type":"string","format":"uuid"}},"roles":{"type":"array","maxItems":4,"items":{"$ref":"#/components/schemas/RuntimeRole"}},"player":{"$ref":"#/components/schemas/RuntimePlayer"},"timers":{"type":"array","items":{"$ref":"#/components/schemas/RuntimeTimer"}}}}
+    RuntimeCommandResult: {"type":"object","additionalProperties":false,"required":["accepted","runtime"],"properties":{"accepted":{"type":"boolean"},"complete":{"type":"boolean"},"fail":{"type":"boolean"},"result":{"enum":["SUBMITTED","ACCEPTED","REJECTED","EXPIRED","DUPLICATE"]},"contribution":{"type":"boolean"},"progress":{"type":"integer","minimum":0},"node":{"$ref":"#/components/schemas/RuntimeNode"},"runtime":{"$ref":"#/components/schemas/RuntimeInstance"}}}
+    RuntimeResponse: {"type":"object","required":["data"],"properties":{"data":{"$ref":"#/components/schemas/RuntimeInstance"}}}
+    RuntimeSessionResponse: {"type":"object","required":["data"],"properties":{"data":{"type":"object","required":["instances"],"properties":{"instances":{"type":"array","items":{"$ref":"#/components/schemas/RuntimeInstance"}}}}}}
+    RuntimeCommandResponse: {"type":"object","required":["data"],"properties":{"data":{"$ref":"#/components/schemas/RuntimeCommandResult"}}}
+
+    GenericSuccess:
+      type: object
+      properties:
+        data: {}
+        meta:
+          type:
+          - object
+          - 'null'
+      additionalProperties: true
+    ErrorEnvelope:
+      type: object
+      required:
+      - error
+      properties:
+        error:
+          type: object
+          required:
+          - code
+          - message
+          - details
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
+    User:
+      type: object
+      required:
+      - id
+      - name
+      - status
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        mobile:
+          type:
+          - string
+          - 'null'
+        email:
+          type:
+          - string
+          - 'null'
+          format: email
+        status:
+          type: string
+          enum:
+          - ACTIVE
+          - SUSPENDED
+          - BLOCKED
+    Team:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - status
+        - captain_user_id
+        - captain
+        - members
+        - member_count
+        - eligible_for_game
+        - organization
+        - created_at
+        - updated_at
+        - archived_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        status:
+          type: string
+          enum:
+            - ACTIVE
+            - ARCHIVED
+        captain_user_id:
+          type: string
+          format: uuid
+        captain:
+          type: object
+          additionalProperties: false
+          required:
+            - id
+            - name
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+        members:
+          type: array
+          maxItems: 8
+          items:
+            $ref: '#/components/schemas/TeamMember'
+        member_count:
+          type: integer
+          minimum: 1
+          maximum: 8
+        eligible_for_game:
+          type: boolean
+          description: 'Derived: ACTIVE team with 4–8 ACTIVE members.'
+        organization:
+          oneOf:
+            -
+              type: 'null'
+            -
+              type: object
+              additionalProperties: false
+              required:
+                - id
+                - name
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                name:
+                  type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        archived_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+    TeamMember:
+      type: object
+      additionalProperties: false
+      required:
+        - user_id
+        - name
+        - status
+        - joined_at
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        status:
+          type: string
+          const: ACTIVE
+        joined_at:
+          type: string
+          format: date-time
+    TeamCreate:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        avatar_media_id:
+          type: 'null'
+          description: 'Media references are unavailable until the Media subsystem is implemented.'
+    TeamUpdate:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        avatar_media_id:
+          type: 'null'
+        reason:
+          type:
+            - string
+            - 'null'
+          maxLength: 1000
+    TeamInviteCreate:
+      type: object
+      additionalProperties: false
+      properties:
+        expires_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: 'If supplied, must be in the future.'
+        max_uses:
+          type:
+            - integer
+            - 'null'
+          minimum: 1
+          maximum: 2147483647
+        reason:
+          type:
+            - string
+            - 'null'
+          maxLength: 1000
+    TeamJoin:
+      type: object
+      additionalProperties: false
+      required:
+        - invite_code
+      properties:
+        invite_code:
+          type: string
+          minLength: 1
+          maxLength: 256
+          writeOnly: true
+    TeamTransfer:
+      type: object
+      additionalProperties: false
+      required:
+        - user_id
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        reason:
+          type:
+            - string
+            - 'null'
+          maxLength: 1000
+    TeamReason:
+      type: object
+      additionalProperties: false
+      properties:
+        reason:
+          type:
+            - string
+            - 'null'
+          maxLength: 1000
+          description: 'Required for privileged admin intervention.'
+    TeamInvite:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - expires_at
+        - max_uses
+        - uses_count
+        - revoked_at
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        expires_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        max_uses:
+          type:
+            - integer
+            - 'null'
+          minimum: 1
+        uses_count:
+          type: integer
+          minimum: 0
+        revoked_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        invite_code:
+          type: string
+          description: 'Creation response only. A 256-bit opaque secret; never returned by list.'
+    TeamResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/Team'
+    TeamInviteResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/TeamInvite'
+    TeamListResponse:
+      type: object
+      required:
+        - data
+        - meta
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Team'
+        meta:
+          $ref: '#/components/schemas/OrganizationPagination'
+    TeamInviteListResponse:
+      type: object
+      required:
+        - data
+        - meta
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/TeamInvite'
+        meta:
+          $ref: '#/components/schemas/OrganizationPagination'
+    LocationSample:
+      {"type":"object","additionalProperties":false,"properties":{"session_id":{"type":"string","format":"uuid"},"lat":{"type":"number","minimum":-90,"maximum":90},"lng":{"type":"number","minimum":-180,"maximum":180},"accuracy":{"type":"number","minimum":0,"maximum":100000},"altitude":{"type":["number","null"],"minimum":-12000,"maximum":100000},"speed":{"type":["number","null"],"minimum":0,"maximum":10000},"heading":{"type":["number","null"],"minimum":0,"exclusiveMaximum":360},"client_timestamp":{"type":"string","format":"date-time"},"sequence":{"type":"integer","minimum":0,"maximum":9007199254740991}},"required":["session_id","lat","lng","accuracy","client_timestamp","sequence"]}
+    LocationBatch:
+      {"type":"object","additionalProperties":false,"properties":{"samples":{"type":"array","minItems":1,"maxItems":100,"items":{"$ref":"#/components/schemas/LocationSample"}}},"required":["samples"]}
+    LocationAccepted:
+      {"type":"object","additionalProperties":false,"properties":{"accepted":{"type":"boolean"},"server_received_at":{"type":"string","format":"date-time"}},"required":["accepted","server_received_at"]}
+    LocationBatchAccepted:
+      {"type":"object","additionalProperties":false,"properties":{"samples":{"type":"array","items":{"$ref":"#/components/schemas/LocationAccepted"}}},"required":["samples"]}
+    LocationPolicy:
+      {"type":"object","additionalProperties":false,"properties":{"active":{"type":"boolean"},"interval_seconds":{"type":"integer"},"near_checkpoint_interval":{"type":"integer"},"stationary_interval":{"type":"integer"},"min_accuracy":{"type":"number"},"background_tracking_required":{"type":"boolean"},"policy_version":{"type":"integer"}},"required":[]}
+    CheckpointCreate:
+      {"type":"object","additionalProperties":false,"properties":{"organization_id":{"type":"string","format":"uuid"},"name":{"type":"string","maxLength":255},"type":{"type":"string","enum":["POINT","ZONE"]},"geom":{"type":"object","additionalProperties":false,"properties":{"type":{"type":"string","enum":["Point","Polygon","MultiPolygon"]},"coordinates":{"type":"array","items":[]}},"required":["type","coordinates"]},"radius_meters":{"type":["number","null"],"minimum":0.01,"maximum":100000},"config":{"type":"object","additionalProperties":false,"properties":{"min_accuracy":{"type":"number","minimum":1,"maximum":1000},"dwell_time":{"type":"integer","minimum":0,"maximum":86400},"required_player_count":{"type":"integer","minimum":1,"maximum":8},"required_roles":{"type":"array","maxItems":4,"uniqueItems":true,"items":{"type":"string","enum":["SCANNER","NAVIGATOR","DECODER","AR_OPERATOR"]}},"required_capabilities":{"type":"array","maxItems":4,"uniqueItems":true,"items":{"type":"string","enum":["SCAN_QR","NAVIGATE","DECODE","OPERATE_AR"]}}},"required":[]},"status":{"type":"string","enum":["ACTIVE","INACTIVE","ARCHIVED"]}},"required":["organization_id","name","type","geom"]}
+    CheckpointUpdate:
+      {"type":"object","additionalProperties":false,"properties":{"name":{"type":"string","maxLength":255},"type":{"type":"string","enum":["POINT","ZONE"]},"geom":{"type":"object","additionalProperties":false,"properties":{"type":{"type":"string","enum":["Point","Polygon","MultiPolygon"]},"coordinates":{"type":"array","items":[]}},"required":["type","coordinates"]},"radius_meters":{"type":["number","null"],"minimum":0.01,"maximum":100000},"config":{"type":"object","additionalProperties":false,"properties":{"min_accuracy":{"type":"number","minimum":1,"maximum":1000},"dwell_time":{"type":"integer","minimum":0,"maximum":86400},"required_player_count":{"type":"integer","minimum":1,"maximum":8},"required_roles":{"type":"array","maxItems":4,"uniqueItems":true,"items":{"type":"string","enum":["SCANNER","NAVIGATOR","DECODER","AR_OPERATOR"]}},"required_capabilities":{"type":"array","maxItems":4,"uniqueItems":true,"items":{"type":"string","enum":["SCAN_QR","NAVIGATE","DECODE","OPERATE_AR"]}}},"required":[]},"status":{"type":"string","enum":["ACTIVE","INACTIVE","ARCHIVED"]}},"required":[]}
+    Checkpoint:
+      {"type":"object","additionalProperties":false,"properties":{"id":{"type":"string","format":"uuid"},"organization_id":{"type":"string","format":"uuid"},"name":{"type":"string","maxLength":255},"type":{"type":"string","enum":["POINT","ZONE"]},"geom":{"type":"object","additionalProperties":false,"properties":{"type":{"type":"string","enum":["Point","Polygon","MultiPolygon"]},"coordinates":{"type":"array","items":[]}},"required":["type","coordinates"]},"radius_meters":{"type":["number","null"],"minimum":0.01,"maximum":100000},"config":{"type":"object","additionalProperties":false,"properties":{"min_accuracy":{"type":"number","minimum":1,"maximum":1000},"dwell_time":{"type":"integer","minimum":0,"maximum":86400},"required_player_count":{"type":"integer","minimum":1,"maximum":8},"required_roles":{"type":"array","maxItems":4,"uniqueItems":true,"items":{"type":"string","enum":["SCANNER","NAVIGATOR","DECODER","AR_OPERATOR"]}},"required_capabilities":{"type":"array","maxItems":4,"uniqueItems":true,"items":{"type":"string","enum":["SCAN_QR","NAVIGATE","DECODE","OPERATE_AR"]}}},"required":[]},"status":{"type":"string","enum":["ACTIVE","INACTIVE","ARCHIVED"]}},"required":[]}
+    CheckpointList:
+      {"type":"array","items":{"$ref":"#/components/schemas/Checkpoint"}}
+    IdempotencyKey:
+      type: string
+      minLength: 8
+      maxLength: 255
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Forbidden:
+      description: Authorization denied
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Conflict:
+      description: Domain/state conflict
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    ValidationError:
+      description: Validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    RateLimited:
+      description: Rate limited
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
