@@ -16,6 +16,7 @@ use App\Models\UserDevice;
 use App\Services\Audit\AuditService;
 use App\Services\Games\GameEvents;
 use App\Services\Games\GameScope;
+use App\Services\Scoring\ScoringService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -25,7 +26,8 @@ use Illuminate\Validation\ValidationException;
 class RuntimeEngine
 {
     public function __construct(private GameScope $scope, private RuntimeEvents $events, private RuntimeHandlers $handlers,
-        private RuntimeProjection $projection, private RuntimeConditions $conditions, private RuntimeTimers $timers, private RuntimeRoles $roles) {}
+        private RuntimeProjection $projection, private RuntimeConditions $conditions, private RuntimeTimers $timers, private RuntimeRoles $roles,
+        private RuntimeSubgroups $subgroups, private ScoringService $scoring) {}
 
     public function read(User $actor, string $sessionId, ?string $teamId = null, bool $self = false, ?UserDevice $device = null): array
     {
@@ -133,7 +135,7 @@ class RuntimeEngine
                         throw new ApiException('STATE_TRANSITION_INVALID', 'Gameplay is paused or terminal.', [], 409);
                     }
                     if (! $operational) {
-                        $this->roles->eligible($instance, $node, $player);
+                        $this->roles->eligible($instance, $node, $player, $device);
                     }
                     $result = ['accepted' => true];
                     if ($type === 'start_node') {
@@ -169,7 +171,8 @@ class RuntimeEngine
                         $node->forceFill(['attempt_count' => $node->attempt_count + 1, 'version_no' => $node->version_no + 1])->save();
                         $this->events->record('node_submission_received', $instance, $node, $actor, $player, [
                             'command_id' => $command->command_id, 'result' => $result['result'] ?? ($result['accepted'] ? 'ACCEPTED' : 'REJECTED'),
-                            'contribution' => $result['contribution'] ?? false, 'progress' => $result['progress'] ?? null]);
+                            'contribution' => $result['contribution'] ?? false, 'progress' => $result['progress'] ?? null,
+                            'role_code' => $result['role_code'] ?? $this->roles->roleFor($instance, $player)]);
                         if (! $result['accepted']) {
                             $this->events->record('node_submission_rejected', $instance, $node, $actor, $player, ['command_id' => $command->command_id]);
                         }
@@ -183,7 +186,7 @@ class RuntimeEngine
                         app(AuditService::class)->record('runtime.command.'.$type, 'team_scenario_instance', $instance->public_id, $input['reason'], ['command_id' => $command->command_id], $actor->id, $session->organization_id);
                     }
 
-                    return $result + ['node' => $this->projection->node($node->fresh()), 'runtime' => $this->projection->instance($instance->fresh(), $player)];
+                    return $result + ['node' => $this->projection->node($node->fresh(), player: $player), 'runtime' => $this->projection->instance($instance->fresh(), $player)];
                 });
                 $outcome = ['result' => $result];
                 $status = ($result['accepted'] ?? true) ? 'SUCCEEDED' : 'REJECTED';
@@ -232,7 +235,7 @@ class RuntimeEngine
                 throw new ApiException('ACTION_NOT_ALLOWED', 'No eligible random Player.', [], 409);
             }
             $index = (int) floor($this->conditions->random($instance, 'player:'.$node->node->node_key) * $players->count());
-            $node->forceFill(['state_json' => ['selected_player_id' => $players[$index]->public_id]])->save();
+            $node->forceFill(['state_json' => array_replace($node->state_json ?? [], ['selected_player_id' => $players[$index]->public_id])])->save();
         }
         if (in_array($type, ['Start', 'Branch', 'Condition', 'Assign Roles', 'Swap Roles', 'Split Team'], true)) {
             $this->start($instance, $node);
@@ -258,15 +261,22 @@ class RuntimeEngine
         $node->forceFill(['status' => $status, 'completed_at' => now(), 'version_no' => $node->version_no + 1])->save();
         $this->timers->finish($instance, $node);
         $targets = $this->next($instance, $node, $player);
+        if ($node->node->node_type === 'Split Team') {
+            $this->subgroups->assign($instance, $node, $targets);
+        }
         $action = ['COMPLETED' => 'node_completed', 'FAILED' => 'node_failed', 'SKIPPED' => 'node_skipped'][$status];
         $this->events->record($action, $instance, $node, $actor, $player, ['completed_by_player_id' => $player?->public_id,
             'completion_metadata' => ['status' => $status], 'next_node_ids' => $targets->pluck('public_id')->all()], $reason);
+        if ($status === 'COMPLETED') {
+            $this->scoring->recordCompletion($instance, $node, $player);
+        }
         foreach ($targets as $target) {
             $this->unlock($instance, $target->fresh(), $player);
         }
         if ($node->node->node_type === 'Finish' && $status === 'COMPLETED') {
             $instance->forceFill(['status' => 'COMPLETED', 'completed_at' => now()])->save();
             $this->timers->finish($instance);
+            $this->scoring->finalize($instance->fresh());
             $this->events->record('completed', $instance, actor: $actor, player: $player);
             $instance->registration->forceFill(['status' => 'FINISHED'])->save();
             foreach ($instance->registration->players()->whereIn('participation_status', ['ACTIVE', 'DISCONNECTED', 'JOINED', 'READY'])->get() as $participant) {
@@ -407,7 +417,7 @@ class RuntimeEngine
         $rules = match ($type) {
             'start_node','reconnect_player','disconnect_player' => [],
             'submit_action','complete_node' => ['answer' => 'sometimes|string|max:1000', 'acknowledged' => 'sometimes|boolean',
-                'selected_option_refs' => 'sometimes|array|list|max:20', 'selected_option_refs.*' => 'string|distinct|max:1000', 'evidence_ref' => 'sometimes|string|max:2048'],
+                'selected_option_refs' => 'sometimes|array|list|max:20', 'selected_option_refs.*' => 'string|distinct|max:1000', 'evidence_ref' => 'sometimes|string|max:2048', 'qr_token' => 'sometimes|string|max:512'],
             'assign_role' => ['reason' => 'required|string|max:1000', 'player_id' => 'required|uuid', 'role_code' => 'required|in:SCANNER,NAVIGATOR,DECODER,AR_OPERATOR', 'slot_no' => 'required|integer|min:1|max:4'],
             'release_role' => ['reason' => 'required|string|max:1000', 'assignment_id' => 'required|uuid'],
             default => ['reason' => 'required|string|max:1000'],

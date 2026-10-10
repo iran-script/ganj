@@ -89,7 +89,7 @@ class RuntimeSecurityTest extends TestCase
     public static function ports(): array
     {
         return array_map(fn (string $port): array => ['App\\Services\\Runtime\\'.$port],
-            ['LocationVerification', 'QRVerification', 'ARVerification', 'ScoreAction', 'HintAction', 'LiveChallengeTrigger']);
+            ['LocationVerification', 'ARVerification', 'ScoreAction', 'HintAction', 'LiveChallengeTrigger']);
     }
 
     #[DataProvider('ports')]

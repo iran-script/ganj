@@ -29,9 +29,11 @@ use App\Services\Runtime\HintAction;
 use App\Services\Runtime\LiveChallengeTrigger;
 use App\Services\Runtime\LocationVerification;
 use App\Services\Runtime\QRVerification;
+use App\Services\Runtime\QrVerificationAdapter;
 use App\Services\Runtime\RuntimeInitializer;
 use App\Services\Runtime\ScoreAction;
 use App\Services\Runtime\UnavailableRuntimeDomains;
+use App\Services\Scoring\ScoringService;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Queue\Events\JobProcessed;
@@ -48,7 +50,9 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(IdempotencyStore::class, DatabaseIdempotencyStore::class);
         $this->app->bind(RuntimeBootstrap::class, RuntimeInitializer::class);
         $this->app->bind(LocationVerification::class, RuntimeLocationVerification::class);
-        foreach ([QRVerification::class, ARVerification::class, ScoreAction::class, HintAction::class, LiveChallengeTrigger::class] as $port) {
+        $this->app->bind(QRVerification::class, QrVerificationAdapter::class);
+        $this->app->bind(ScoreAction::class, ScoringService::class);
+        foreach ([ARVerification::class, HintAction::class, LiveChallengeTrigger::class] as $port) {
             $this->app->bind($port, UnavailableRuntimeDomains::class);
         }
         foreach ([BillingGate::class, ScenarioAssignmentReadiness::class, PricingSnapshotProvider::class, CancellationResolution::class] as $port) {
@@ -72,6 +76,7 @@ class AppServiceProvider extends ServiceProvider
         }
         RateLimiter::for('location-submit', fn (Request $request) => Limit::perMinute(config('location.rate_per_minute'))->by((string) $request->user()?->id));
         RateLimiter::for('runtime-submit', fn (Request $request) => Limit::perMinute(120)->by((string) $request->user()?->id));
+        RateLimiter::for('qr-scan', fn (Request $request) => Limit::perMinute(120)->by((string) $request->user()?->id.':'.($request->header('X-Device-Id') ?? 'missing')));
         Event::listen(JobProcessed::class, function (): void {
             try {
                 Redis::connection()->setex('phase0:queue-worker-heartbeat', 120, (string) now()->timestamp);

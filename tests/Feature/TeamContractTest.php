@@ -8,7 +8,7 @@ use Tests\TestCase;
 
 class TeamContractTest extends TestCase
 {
-    public function test_team_routes_match_the_canonical_openapi_and_no_qr_routes_are_added(): void
+    public function test_team_routes_match_the_canonical_openapi(): void
     {
         $spec = Yaml::parseFile(base_path('docs/specs/03_openapi.yaml'));
         $objectSpec = Yaml::parseFile(base_path('docs/specs/03_openapi.yaml'), Yaml::PARSE_OBJECT_FOR_MAP);
@@ -26,7 +26,6 @@ class TeamContractTest extends TestCase
         $teamRoutes = $routes->filter(fn ($route): bool => str_starts_with($route->uri(), 'api/v1/teams'));
         $this->assertCount(12, $operations);
         $this->assertEqualsCanonicalizing($operations, $teamRoutes->map(fn ($route): string => $route->methods()[0].' '.$route->uri())->values()->all());
-        $this->assertFalse($routes->contains(fn ($route): bool => str_contains($route->uri(), '/qr')));
         $this->assertArrayHasKey('201', $spec['paths']['/teams']['post']['responses']);
         $this->assertArrayHasKey('201', $spec['paths']['/teams/{team_id}/invites']['post']['responses']);
         $this->assertArrayHasKey('204', $spec['paths']['/teams/{team_id}/members/{user_id}']['delete']['responses']);

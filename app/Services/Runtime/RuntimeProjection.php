@@ -12,7 +12,7 @@ use App\Models\TeamScenarioInstance;
 
 class RuntimeProjection
 {
-    public function __construct(private RuntimeTimers $timers) {}
+    public function __construct(private RuntimeTimers $timers, private RuntimeProjectionPolicy $policy) {}
 
     public function instance(TeamScenarioInstance $instance, ?GameSessionPlayer $player = null): array
     {
@@ -29,7 +29,7 @@ class RuntimeProjection
             'scenario_version_id' => $instance->version->public_id, 'status' => $instance->status,
             'effective_elapsed_seconds' => $this->timers->instanceElapsed($instance),
             'started_at' => $instance->started_at?->toISOString(), 'completed_at' => $instance->completed_at?->toISOString(),
-            'nodes' => $nodes->map(fn (TeamNodeInstance $node): array => $this->node($node, (int) ($contributions[$node->public_id] ?? 0), $checkpoints))->all(),
+            'nodes' => $nodes->map(fn (TeamNodeInstance $node): array => $this->node($node, (int) ($contributions[$node->public_id] ?? 0), $checkpoints, $player))->all(),
             'active_node_ids' => $nodes->whereIn('status', ['AVAILABLE', 'ACTIVE'])->pluck('public_id')->values()->all(),
             'roles' => $roles->map(fn (PlayerRoleAssignment $r): array => ['id' => $r->public_id, 'player_id' => $players[$r->game_session_player_id]->public_id,
                 'role_code' => $r->role_code, 'slot_no' => $r->slot_no])->all(),
@@ -40,10 +40,10 @@ class RuntimeProjection
                 'status' => $timer->status, 'duration_seconds' => $timer->duration_seconds, 'effective_elapsed_seconds' => $this->timers->elapsed($timer)])->all()];
     }
 
-    public function node(TeamNodeInstance $node, ?int $progress = null, ?array $checkpoints = null): array
+    public function node(TeamNodeInstance $node, ?int $progress = null, ?array $checkpoints = null, ?GameSessionPlayer $player = null): array
     {
         $config = $node->node->config;
-        $safe = array_intersect_key($config, array_flip(['prompt', 'text', 'options', 'multi_select', 'duration_seconds', 'minimum_player_count']));
+        $safe = $this->policy->config($node, $player);
         if ($node->status !== 'LOCKED' && in_array($node->node->node_type, ['GPS / Location', 'Checkpoint'], true)) {
             $checkpoint = $checkpoints !== null ? ($checkpoints[$config['checkpoint_id']] ?? null)
                 : Checkpoint::where('public_id', $config['checkpoint_id'])->where('organization_id', $node->instance->session->organization_id)

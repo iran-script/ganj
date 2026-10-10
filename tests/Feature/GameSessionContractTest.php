@@ -29,7 +29,7 @@ class GameSessionContractTest extends TestCase
             $expected[] = $path;
         }
         $this->assertCount(23, $expected);
-        foreach (['/billing', '/payments', '/store', '/gps', '/qr', '/ar', '/score'] as $later) {
+        foreach (['/billing', '/payments', '/store', '/gps', '/ar'] as $later) {
             $this->assertFalse($routes->contains(fn ($r): bool => in_array(ltrim($later, '/'), explode('/', $r->uri()), true)));
         }
         foreach (['GameCreate', 'GameUpdate', 'SessionCreate', 'SessionUpdate', 'SessionReady', 'SessionDevice'] as $schema) {

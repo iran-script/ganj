@@ -8,12 +8,13 @@ use App\Models\PlayerRoleAssignment;
 use App\Models\TeamNodeInstance;
 use App\Models\TeamScenarioInstance;
 use App\Models\User;
+use App\Models\UserDevice;
 
 class RuntimeRoles
 {
     public const CAPABILITIES = ['SCANNER' => 'SCAN_QR', 'NAVIGATOR' => 'NAVIGATE', 'DECODER' => 'DECODE', 'AR_OPERATOR' => 'OPERATE_AR'];
 
-    public function __construct(private RuntimeEvents $events) {}
+    public function __construct(private RuntimeEvents $events, private RoleAssignmentPolicy $policies, private SupportParticipationPolicy $support) {}
 
     public function release(TeamScenarioInstance $instance, PlayerRoleAssignment $assignment, ?User $actor = null): void
     {
@@ -51,7 +52,7 @@ class RuntimeRoles
         if (count(array_unique($roles)) !== count($roles)) {
             throw new ApiException('ACTION_NOT_ALLOWED', 'Role codes must be distinct.', [], 409);
         }
-        $players = $instance->registration->players()->whereIn('participation_status', ['READY', 'ACTIVE', 'DISCONNECTED'])->get();
+        $players = $this->policies->players($instance, $node, $roles);
         if ($players->count() < count($roles)) {
             throw new ApiException('ACTION_NOT_ALLOWED', 'Not enough eligible role participants.', [], 409);
         }
@@ -61,22 +62,57 @@ class RuntimeRoles
             $this->release($instance, $assignment);
         }
         foreach ($roles as $slot => $role) {
-            $this->assign($instance, $node, $players[$slot], $role, $slot + 1, 'LEAST_RECENTLY_USED');
+            $this->assign($instance, $node, $players[$slot], $role, $slot + 1, $node->node->config['assignment_policy'] ?? 'LEAST_RECENTLY_USED');
         }
     }
 
-    public function eligible(TeamScenarioInstance $instance, TeamNodeInstance $node, GameSessionPlayer $player): void
+    public function eligible(TeamScenarioInstance $instance, TeamNodeInstance $node, GameSessionPlayer $player, ?UserDevice $device = null): void
     {
+        $this->support->assertActionAllowed($instance, $node, $player);
+        $requiredCapability = $node->node->config['required_device_capability'] ?? null;
+        if ($requiredCapability !== null && (! $device || ! $this->support->supports($device, $requiredCapability))) {
+            throw new ApiException('ACTION_NOT_ALLOWED', 'The current Device lacks the required capability.', [], 403);
+        }
         $type = $node->node->node_type;
+        $policy = $node->node->config['role_policy'] ?? null;
+        if ($type === 'QR' && $policy === 'ANY_TEAM_MEMBER') {
+            return;
+        }
         $required = ['QR' => 'SCANNER', 'GPS / Location' => 'NAVIGATOR', 'Checkpoint' => 'NAVIGATOR',
             'AR Challenge' => 'AR_OPERATOR', 'Puzzle' => 'DECODER', 'Password' => 'DECODER', 'Text Answer' => 'DECODER', 'Multiple Choice' => 'DECODER'];
         $role = $type === 'Specific Player' ? $node->node->config['role'] : ($required[$type] ?? null);
+        if ($type === 'QR' && $policy === 'SPECIFIC_ROLE') {
+            $role = $node->node->config['role_code'] ?? $role;
+        }
         $active = PlayerRoleAssignment::where('team_scenario_instance_id', $instance->id)->whereNull('released_at');
+        if ($type === 'QR' && $policy === 'ACTIVE_SLOT' && ! (clone $active)->where('game_session_player_id', $player->id)->exists()) {
+            throw new ApiException('ACTION_NOT_ALLOWED', 'The current runtime slot does not allow this action.', [], 403);
+        }
         if ($role && ($type === 'Specific Player' || (clone $active)->exists()) && ! (clone $active)->where('game_session_player_id', $player->id)->where('role_code', $role)->exists()) {
             throw new ApiException('ACTION_NOT_ALLOWED', 'The current runtime role does not allow this action.', [], 403);
         }
         if ($type === 'Random Player' && ($node->state_json['selected_player_id'] ?? null) !== $player->public_id) {
             throw new ApiException('ACTION_NOT_ALLOWED', 'This task belongs to another selected Player.', [], 403);
+        }
+        if ($type === 'QR' && $policy === 'SPECIFIC_PLAYER'
+            && ($node->state_json['selected_player_id'] ?? $node->node->config['specific_player_id'] ?? null) !== $player->public_id) {
+            throw new ApiException('ACTION_NOT_ALLOWED', 'This task belongs to another selected Player.', [], 403);
+        }
+    }
+
+    public function roleFor(TeamScenarioInstance $instance, GameSessionPlayer $player): ?string
+    {
+        return PlayerRoleAssignment::where('team_scenario_instance_id', $instance->id)
+            ->where('game_session_player_id', $player->id)
+            ->whereNull('released_at')
+            ->value('role_code');
+    }
+
+    public function assertSubgroupEligible(TeamNodeInstance $node, GameSessionPlayer $player): void
+    {
+        $members = $node->state_json['subgroup_member_ids'] ?? null;
+        if (is_array($members) && ! in_array($player->public_id, $members, true)) {
+            throw new ApiException('ACTION_NOT_ALLOWED', 'This action is restricted to another subgroup.', [], 403);
         }
     }
 }

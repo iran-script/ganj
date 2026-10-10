@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 
 #[Guarded(['*'])]
@@ -40,5 +41,10 @@ class TeamScenarioInstance extends Model
     public function version(): BelongsTo
     {
         return $this->belongsTo(ScenarioVersion::class, 'scenario_version_id');
+    }
+
+    public function nodes(): HasMany
+    {
+        return $this->hasMany(TeamNodeInstance::class, 'team_scenario_instance_id');
     }
 }

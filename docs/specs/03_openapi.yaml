@@ -941,13 +941,18 @@ paths:
       - QR
       operationId: scanQr
       summary: scanQr
+      description: 'ONLINE_REQUIRED. The QR value is an opaque trigger identifier; the server resolves the Session, Team, Player, Device, pinned Runtime Node and optional Location/Checkpoint policy. The response never exposes answers, graph state, internal identifiers, identifier hashes, or token hashes. A returned one_time_token is single-use and must be submitted to the existing Runtime command endpoint; Runtime remains progression authority.'
       responses:
         '200':
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/GenericSuccess'
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/QrScanResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -964,13 +969,21 @@ paths:
           $ref: '#/components/responses/RateLimited'
       security:
       - bearerAuth: []
+      parameters:
+      - name: X-Device-Id
+        in: header
+        required: true
+        schema: {type: string, format: uuid}
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema: {$ref: '#/components/schemas/IdempotencyKey'}
       requestBody:
-        required: false
+        required: true
         content:
           application/json:
             schema:
-              type: object
-              additionalProperties: true
+              $ref: '#/components/schemas/QrScanRequest'
   /ar/challenges/{challenge_id}:
     get:
       tags:
@@ -2883,7 +2896,7 @@ components:
     ScenarioReason:
       {"type":"object","additionalProperties":false,"properties":{"reason":{"type":["string","null"],"maxLength":1000}}}
     ScenarioNode:
-      {"type":"object","additionalProperties":false,"properties":{"node_key":{"type":"string","pattern":"^[A-Za-z][A-Za-z0-9_-]{0,99}$"},"node_type":{"type":"string","enum":["Start","Finish","Branch","Condition","Wait","Timer","Subflow","Message","Show Image","Show Video","GPS / Location","Checkpoint","QR","Puzzle","Password","Text Answer","Multiple Choice","Assign Roles","Swap Roles","Specific Player","Random Player","Team Together","Split Team","Add Score","Subtract Score","Give Hint","Live Challenge Trigger","AR Challenge"]},"title":{"type":["string","null"]},"config":{"type":["object","array"],"description":"Registry-validated type-specific content configuration. Empty config is accepted as {} or []. Runtime uses registered handlers; future domain adapters fail closed."},"position_x":{"type":["number","null"]},"position_y":{"type":["number","null"]}},"required":["node_key","node_type","config"]}
+      {"type":"object","additionalProperties":false,"properties":{"node_key":{"type":"string","pattern":"^[A-Za-z][A-Za-z0-9_-]{0,99}$"},"node_type":{"type":"string","enum":["Start","Finish","Branch","Condition","Wait","Timer","Subflow","Message","Show Image","Show Video","GPS / Location","Checkpoint","QR","Puzzle","Password","Text Answer","Multiple Choice","Assign Roles","Swap Roles","Specific Player","Random Player","Team Together","Split Team","Relay","Add Score","Subtract Score","Give Hint","Live Challenge Trigger","AR Challenge"]},"title":{"type":["string","null"]},"config":{"type":["object","array"],"description":"Registry-validated type-specific content configuration. Empty config is accepted as {} or []. Runtime uses registered handlers; future domain adapters fail closed."},"position_x":{"type":["number","null"]},"position_y":{"type":["number","null"]}},"required":["node_key","node_type","config"]}
     ScenarioEdge:
       {"type":"object","additionalProperties":false,"properties":{"edge_key":{"type":"string","pattern":"^[A-Za-z][A-Za-z0-9_-]{0,99}$"},"from_node":{"type":"string","pattern":"^[A-Za-z][A-Za-z0-9_-]{0,99}$"},"to_node":{"type":"string","pattern":"^[A-Za-z][A-Za-z0-9_-]{0,99}$"},"priority":{"type":"integer","minimum":0,"maximum":2147483647},"condition_group_id":{"type":["string","null"],"format":"uuid"},"metadata":{"type":["object","array"],"maxProperties":0,"maxItems":0}},"required":["edge_key","from_node","to_node","priority"]}
     ScenarioVariable:
@@ -3270,7 +3283,9 @@ components:
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
     RuntimeStart: {"type":"object","additionalProperties":false,"properties":{}}
-    RuntimeEvidence: {"type":"object","additionalProperties":false,"properties":{"answer":{"type":"string","maxLength":1000},"acknowledged":{"type":"boolean"},"selected_option_refs":{"type":"array","maxItems":20,"uniqueItems":true,"items":{"type":"string","maxLength":1000}},"evidence_ref":{"type":"string","maxLength":2048}}}
+    RuntimeEvidence: {"type":"object","additionalProperties":false,"properties":{"answer":{"type":"string","maxLength":1000},"acknowledged":{"type":"boolean"},"selected_option_refs":{"type":"array","maxItems":20,"uniqueItems":true,"items":{"type":"string","maxLength":1000}},"evidence_ref":{"type":"string","maxLength":2048},"qr_token":{"type":"string","maxLength":512}}}
+    QrScanRequest: {"type":"object","additionalProperties":false,"properties":{"session_id":{"type":"string","format":"uuid"},"qr_identifier":{"type":"string","minLength":16,"maxLength":512},"location_event_id":{"type":["integer","null"]}},"required":["session_id","qr_identifier"]}
+    QrScanResponse: {"type":"object","additionalProperties":false,"properties":{"accepted":{"type":"boolean"},"trigger_type":{"type":"string"},"action_reference":{"type":["string","null"]},"content":{"type":["object","array","string","null"]},"one_time_token":{"type":["string","null"],"description":"Opaque single-use token returned only at issuance."},"expires_at":{"type":["string","null"],"format":"date-time"},"online_required":{"const":true}},"required":["accepted","online_required"]}
     RuntimeReason: {"type":"object","additionalProperties":false,"required":["reason"],"properties":{"reason":{"type":"string","minLength":1,"maxLength":1000}}}
     RuntimeNode: {"type":"object","additionalProperties":false,"required":["id","node_key","node_type","title","status","config","attempt_count","version_no","started_at","completed_at"],"properties":{"id":{"type":"string","format":"uuid"},"node_key":{"type":"string"},"node_type":{"type":"string"},"title":{"type":["string","null"]},"status":{"enum":["AVAILABLE","ACTIVE","COMPLETED","FAILED","SKIPPED"]},"config":{"type":["object","array"],"description":"Allow-listed presentation fields only. No answers, conditions, hidden variables or admin config."},"attempt_count":{"type":"integer","minimum":0},"version_no":{"type":"integer","minimum":1},"started_at":{"type":["string","null"],"format":"date-time"},"completed_at":{"type":["string","null"],"format":"date-time"},"progress":{"type":["integer","null"],"minimum":0},"selected_player_id":{"type":["string","null"],"format":"uuid"}}}
     RuntimeTimer: {"type":"object","additionalProperties":false,"required":["id","node_instance_id","status","duration_seconds","effective_elapsed_seconds"],"properties":{"id":{"type":"string","format":"uuid"},"node_instance_id":{"type":["string","null"],"format":"uuid"},"status":{"enum":["NOT_STARTED","RUNNING","PAUSED","FINISHED","CANCELLED"]},"duration_seconds":{"type":["integer","null"]},"effective_elapsed_seconds":{"type":"integer","minimum":0}}}

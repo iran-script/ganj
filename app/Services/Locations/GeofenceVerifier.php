@@ -47,7 +47,7 @@ class GeofenceVerifier
     {
         $nodes = TeamNodeInstance::with(['node', 'instance.session'])->where('status', 'ACTIVE')
             ->whereHas('instance', fn ($q) => $q->where('game_session_team_id', $player->game_session_team_id)->where('status', 'ACTIVE'))
-            ->whereHas('node', fn ($q) => $q->whereIn('node_type', ['GPS / Location', 'Checkpoint']))->get();
+            ->whereHas('node', fn ($q) => $q->whereIn('node_type', ['GPS / Location', 'Checkpoint', 'QR'])->whereNotNull('config->checkpoint_id'))->get();
         $checkpoints = Checkpoint::where('organization_id', $player->session->organization_id)
             ->whereIn('public_id', $nodes->map(fn ($node) => $node->node->config['checkpoint_id']))->get()->keyBy('public_id');
         foreach ($nodes as $node) {

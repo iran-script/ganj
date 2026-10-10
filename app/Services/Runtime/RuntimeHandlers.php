@@ -4,7 +4,6 @@ namespace App\Services\Runtime;
 
 use App\Exceptions\ApiException;
 use App\Models\GameSessionPlayer;
-use App\Models\RuntimeEvent;
 use App\Models\RuntimeTimer;
 use App\Models\TeamNodeInstance;
 use App\Services\Scenarios\NodeTypeRegistry;
@@ -16,7 +15,7 @@ class RuntimeHandlers
     {
         return ['Start' => 'automatic', 'Finish' => 'acknowledge', 'Message' => 'acknowledge',
             'Branch' => 'automatic', 'Condition' => 'automatic', 'Assign Roles' => 'automatic', 'Swap Roles' => 'automatic',
-            'Split Team' => 'automatic', 'Random Player' => 'acknowledge', 'Specific Player' => 'acknowledge',
+            'Split Team' => 'automatic', 'Relay' => 'relay', 'Random Player' => 'acknowledge', 'Specific Player' => 'acknowledge',
             'Puzzle' => 'answer', 'Password' => 'answer', 'Text Answer' => 'answer', 'Multiple Choice' => 'choice',
             'Timer' => 'timer', 'Wait' => 'timer', 'Team Together' => 'barrier',
             'GPS / Location' => LocationVerification::class, 'Checkpoint' => LocationVerification::class,
@@ -25,7 +24,7 @@ class RuntimeHandlers
             'Give Hint' => HintAction::class, 'Live Challenge Trigger' => LiveChallengeTrigger::class];
     }
 
-    public function __construct(private RuntimeTimers $timers) {}
+    public function __construct(private RuntimeTimers $timers, private BarrierEvaluator $barrier, private RuntimeRoles $roles) {}
 
     public function submit(TeamNodeInstance $node, ?GameSessionPlayer $player, array $input, string $commandId): array
     {
@@ -97,15 +96,23 @@ class RuntimeHandlers
 
     public function barrier(TeamNodeInstance $node, ?GameSessionPlayer $player, array $input): array
     {
-        if (! $player || ($input['acknowledged'] ?? null) !== true) {
-            return ['accepted' => false, 'complete' => false];
-        }
-        $contributions = RuntimeEvent::where('aggregate_id', $node->public_id)->where('event_type', 'runtime.node_submission_received.v1')
-            ->where('payload->data->contribution', true)->pluck('player_id');
-        $duplicate = $contributions->contains($player->id);
-        $count = $contributions->count() + ($duplicate ? 0 : 1);
+        return $this->barrier->evaluate($node, $player, $input);
+    }
 
-        return ['accepted' => true, 'complete' => $count >= $node->node->config['minimum_player_count'],
-            'contribution' => ! $duplicate, 'result' => $duplicate ? 'DUPLICATE' : 'ACCEPTED', 'progress' => $count];
+    public function relay(TeamNodeInstance $node, ?GameSessionPlayer $player, array $input): array
+    {
+        if (! $player || ($input['acknowledged'] ?? null) !== true) {
+            return ['accepted' => false, 'complete' => false, 'result' => 'REJECTED'];
+        }
+        $roles = $node->node->config['roles'];
+        $index = (int) ($node->state_json['relay_index'] ?? 0);
+        $role = $this->roles->roleFor($node->instance, $player);
+        if ($role !== ($roles[$index] ?? null)) {
+            throw new ApiException('ACTION_NOT_ALLOWED', 'The current Relay step belongs to another role.', [], 403);
+        }
+        $next = $index + 1;
+        $node->forceFill(['state_json' => ['relay_index' => $next, 'current_role' => $roles[$next] ?? null]])->save();
+
+        return ['accepted' => true, 'complete' => $next >= count($roles), 'result' => 'ACCEPTED', 'relay_index' => $next];
     }
 }

@@ -7,8 +7,10 @@ use App\Http\Controllers\Api\HealthController;
 use App\Http\Controllers\Api\IdentityController;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\OrganizationController;
+use App\Http\Controllers\Api\QrController;
 use App\Http\Controllers\Api\RuntimeController;
 use App\Http\Controllers\Api\ScenarioController;
+use App\Http\Controllers\Api\ScoringController;
 use App\Http\Controllers\Api\TeamController;
 use App\Http\Middleware\AuthenticateIdentity;
 use Illuminate\Support\Facades\Route;
@@ -27,9 +29,20 @@ Route::prefix('v1')->group(function (): void {
         Route::post('/checkpoints', [CheckpointController::class, 'save'])->name('checkpoints.create');
         Route::get('/checkpoints/{checkpoint_id}', [CheckpointController::class, 'show'])->name('checkpoints.show');
         Route::patch('/checkpoints/{checkpoint_id}', [CheckpointController::class, 'save'])->name('checkpoints.update');
+        Route::post('/qr/scan', [QrController::class, 'scan'])->middleware('throttle:qr-scan')->name('qr.scan');
+        Route::post('/qr/triggers', [QrController::class, 'create'])->name('qr.triggers.create');
+        foreach (['activate', 'deactivate', 'revoke'] as $action) {
+            Route::post('/qr/triggers/{trigger_id}/'.$action, [QrController::class, 'lifecycle'])->defaults('action', $action)->name('qr.triggers.'.$action);
+        }
         Route::get('/game-sessions/{session_id}/runtime', [RuntimeController::class, 'read'])->name('runtime.session');
         Route::get('/game-sessions/{session_id}/teams/{team_id}/runtime', [RuntimeController::class, 'read'])->name('runtime.team');
         Route::get('/game-sessions/{session_id}/players/me/runtime', [RuntimeController::class, 'read'])->name('runtime.self');
+        Route::get('/game-sessions/{session_id}/leaderboard', [ScoringController::class, 'leaderboard'])->name('scores.leaderboard');
+        Route::get('/game-sessions/{session_id}/teams/{team_id}/score', [ScoringController::class, 'team'])->name('scores.team');
+        Route::get('/game-sessions/{session_id}/teams/{team_id}/score-events', [ScoringController::class, 'events'])->name('scores.events');
+        Route::post('/game-sessions/{session_id}/teams/{team_id}/score-adjustments', [ScoringController::class, 'adjust'])->name('scores.adjust');
+        Route::get('/game-sessions/{session_id}/teams/{team_id}/hints', [ScoringController::class, 'hints'])->name('hints.index');
+        Route::post('/runtime/nodes/{node_instance_id}/hints/consume', [ScoringController::class, 'consumeHint'])->middleware('throttle:runtime-submit')->name('hints.consume');
         foreach (['start' => 'start_node', 'submit' => 'submit_action', 'complete' => 'complete_node'] as $path => $action) {
             Route::post('/runtime/nodes/{node_instance_id}/'.$path, [RuntimeController::class, 'mutate'])->middleware('throttle:runtime-submit')->name('runtime.'.$action);
         }

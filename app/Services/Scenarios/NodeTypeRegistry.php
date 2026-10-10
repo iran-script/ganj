@@ -29,8 +29,9 @@ class NodeTypeRegistry
                 'correct_option_refs' => 'required|array|list|min:1|max:20', 'correct_option_refs.*' => 'required|string', 'multi_select' => 'required|boolean'], []],
             'Assign Roles' => [$roles, []], 'Swap Roles' => [$roles, []],
             'Specific Player' => [['role' => 'required|string|in:SCANNER,NAVIGATOR,DECODER,AR_OPERATOR'], []],
-            'Random Player' => [[], []], 'Team Together' => [['minimum_player_count' => 'required|integer|min:1|max:8'], []],
+            'Random Player' => [[], []], 'Team Together' => [['minimum_player_count' => 'required|integer|min:1|max:8', 'required_roles' => 'sometimes|array|list|max:4', 'required_roles.*' => 'string|in:SCANNER,NAVIGATOR,DECODER,AR_OPERATOR', 'active_slot_only' => 'sometimes|boolean', 'synchronization_window_seconds' => 'sometimes|integer|min:1|max:86400', 'support_policy' => 'sometimes|string|in:COLLABORATE,DENY'], []],
             'Split Team' => [['groups' => 'required|array|list|min:2|max:4', 'groups.*' => 'integer|min:1|max:8'], []],
+            'Relay' => [['roles' => 'required|array|list|min:2|max:4', 'roles.*' => 'required|string|in:SCANNER,NAVIGATOR,DECODER,AR_OPERATOR'], []],
             'Add Score' => [['amount' => 'required|integer|min:1|max:1000000', 'reason' => 'required|string|max:1000'], []],
             'Subtract Score' => [['amount' => 'required|integer|min:1|max:1000000', 'reason' => 'required|string|max:1000'], []],
             'Give Hint' => [['text' => 'required|string|max:2000', 'hint_no' => 'required|integer|min:1|max:3'], []],
@@ -53,11 +54,18 @@ class NodeTypeRegistry
         if (! $definition) {
             return ['UNSUPPORTED_NODE_TYPE'];
         }
-        $allowed = array_filter(array_keys($definition['rules']), fn (string $key): bool => ! str_contains($key, '.'));
+        if (isset($config['role_content']) && ! is_array($config['role_content'])) {
+            return ['INVALID_NODE_CONFIG'];
+        }
+        if (isset($config['required_device_capability']) && ! is_string($config['required_device_capability'])) {
+            return ['INVALID_NODE_CONFIG'];
+        }
+        $allowed = [...array_filter(array_keys($definition['rules']), fn (string $key): bool => ! str_contains($key, '.')), 'role_content', 'required_device_capability', 'score'];
         if (array_diff(array_keys($config), $allowed)) {
             return ['INVALID_NODE_CONFIG'];
         }
-        if (Validator::make($config, $definition['rules'])->fails()) {
+        $validationConfig = array_diff_key($config, ['role_content' => true, 'required_device_capability' => true, 'score' => true]);
+        if (Validator::make($validationConfig, $definition['rules'])->fails()) {
             return ['INVALID_NODE_CONFIG'];
         }
         if ($type === 'Multiple Choice') {

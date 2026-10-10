@@ -29,7 +29,7 @@ class ScenarioContractTest extends TestCase
                 }
             }
         }
-        foreach (['scenario-assignments', 'billing', 'payments', 'store', 'gps', 'qr', 'ar', 'score'] as $later) {
+        foreach (['scenario-assignments', 'billing', 'payments', 'store', 'gps', 'ar'] as $later) {
             $this->assertFalse($all->contains(fn ($route): bool => in_array($later, explode('/', $route->uri()), true)));
         }
         foreach (['ScenarioCreate', 'ScenarioUpdate', 'ScenarioVersionUpdate', 'ScenarioGraphSave', 'ScenarioPublish'] as $name) {
