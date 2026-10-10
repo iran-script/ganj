@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\CheckpointController;
 use App\Http\Controllers\Api\GameController;
+use App\Http\Controllers\Api\GameMasterController;
 use App\Http\Controllers\Api\GameSessionController;
 use App\Http\Controllers\Api\HealthController;
 use App\Http\Controllers\Api\IdentityController;
@@ -77,6 +78,16 @@ Route::prefix('v1')->group(function (): void {
         }
         Route::get('/game-sessions/{session_id}/state', [GameSessionController::class, 'state'])->name('sessions.state');
         Route::get('/game-sessions/{session_id}/timeline', [GameSessionController::class, 'timeline'])->name('sessions.timeline');
+        Route::get('/game-sessions/{session_id}/control-room', [GameMasterController::class, 'controlRoom'])->name('gamemaster.control-room');
+        Route::post('/game-sessions/{session_id}/live-challenges', [GameMasterController::class, 'createChallenge'])->name('live-challenges.create');
+        Route::get('/game-sessions/{session_id}/live-challenges', [GameMasterController::class, 'listChallenges'])->name('live-challenges.index');
+        Route::get('/live-challenges/{challenge_id}', [GameMasterController::class, 'showChallenge'])->name('live-challenges.show');
+        foreach (['ack', 'start', 'submit', 'cancel'] as $action) {
+            Route::post('/live-challenges/{challenge_id}/'.$action, [GameMasterController::class, 'transition'])->defaults('action', $action)->name('live-challenges.'.$action);
+        }
+        Route::post('/game-sessions/{session_id}/messages', [GameMasterController::class, 'message'])->name('gamemaster.messages');
+        Route::post('/game-sessions/{session_id}/players/{player_id}/rebind-device', [GameMasterController::class, 'rebindDevice'])->name('gamemaster.rebind-device');
+        Route::post('/game-sessions/{session_id}/players/{player_id}/disqualify', [GameMasterController::class, 'disqualify'])->name('gamemaster.disqualify');
         Route::get('/teams', [TeamController::class, 'index'])->name('teams.index');
         Route::post('/teams', [TeamController::class, 'create'])->name('teams.create');
         Route::post('/teams/join', [TeamController::class, 'join'])->name('teams.join');
