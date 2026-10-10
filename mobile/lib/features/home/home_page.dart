@@ -22,9 +22,26 @@ class _HomePageState extends State<HomePage> {
     sessions = ApiClient().get('/game-sessions');
   }
 
+  Future<void> logout() async {
+    if (await widget.auth.logout()) return;
+    if (!mounted) return;
+    final discard = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('عملیات در انتظار همگام‌سازی'),
+        content: const Text('پیش از خروج، عملیات باقی‌مانده را همگام‌سازی کنید یا آن‌ها را حذف کنید.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('انصراف')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('حذف و خروج')),
+        ],
+      ),
+    );
+    if (discard == true) await widget.auth.logout(discardPending: true);
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('بازی‌های من'), actions: [IconButton(onPressed: widget.auth.logout, icon: const Icon(Icons.logout))]),
+        appBar: AppBar(title: const Text('بازی‌های من'), actions: [IconButton(onPressed: logout, icon: const Icon(Icons.logout))]),
         body: FutureBuilder<Map<String, dynamic>>(
           future: sessions,
           builder: (context, snapshot) {

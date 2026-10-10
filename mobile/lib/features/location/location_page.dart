@@ -3,6 +3,7 @@ import 'package:geolocator/geolocator.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/errors/api_error.dart';
+import '../../core/offline/outbox_repository.dart';
 
 class LocationPage extends StatefulWidget {
   const LocationPage({required this.sessionId, required this.onLocation, super.key});
@@ -15,6 +16,7 @@ class LocationPage extends StatefulWidget {
 }
 
 class _LocationPageState extends State<LocationPage> {
+  final outbox = OutboxRepository();
   String? message;
   bool loading = false;
 
@@ -26,7 +28,16 @@ class _LocationPageState extends State<LocationPage> {
       if (permission == LocationPermission.denied) permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) throw const ApiError(code: 'LOCATION_INVALID', message: 'Location permission denied.');
       final position = await Geolocator.getCurrentPosition(locationSettings: const LocationSettings(accuracy: LocationAccuracy.high));
-      await ApiClient().post('/locations', device: true, idempotent: true, body: {'session_id': widget.sessionId, 'lat': position.latitude, 'lng': position.longitude, 'accuracy': position.accuracy, 'client_timestamp': DateTime.now().toUtc().toIso8601String(), 'sequence': DateTime.now().microsecondsSinceEpoch});
+      final sample = {'session_id': widget.sessionId, 'lat': position.latitude, 'lng': position.longitude, 'accuracy': position.accuracy,
+        'client_timestamp': DateTime.now().toUtc().toIso8601String(), 'sequence': DateTime.now().microsecondsSinceEpoch};
+      try {
+        await ApiClient().post('/locations', device: true, idempotent: true, body: sample);
+      } catch (error) {
+        if (!ApiClient.isNetworkFailure(error)) rethrow;
+        final action = await outbox.enqueue(actionType: 'gps_sample', sessionId: widget.sessionId, payload: sample);
+        if (mounted) setState(() => message = 'موقعیت برای همگام‌سازی ذخیره شد (${action.clientActionId.substring(0, 8)}).');
+        return;
+      }
       await widget.onLocation({'acknowledged': true});
       if (mounted) setState(() => message = 'موقعیت ارسال شد؛ نتیجه توسط سرور بررسی می‌شود.');
     } on ApiError catch (exception) {

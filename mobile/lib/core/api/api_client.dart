@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
@@ -72,4 +74,6 @@ class ApiClient {
   Future<String?> token() => _store.read(_tokenKey);
 
   Future<String> deviceId() => _device.getOrCreate();
+
+  static bool isNetworkFailure(Object error) => error is SocketException || error is TimeoutException || error is http.ClientException;
 }

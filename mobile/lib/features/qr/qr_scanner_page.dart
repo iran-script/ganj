@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/errors/api_error.dart';
@@ -17,16 +18,30 @@ class QrScannerPage extends StatefulWidget {
 class _QrScannerPageState extends State<QrScannerPage> {
   bool handled = false;
   String? error;
+  String? pendingValue;
+  String? pendingRequestId;
 
   Future<void> found(String? value) async {
     if (handled || value == null || value.isEmpty) return;
     setState(() => handled = true);
+    if (pendingValue != value) {
+      pendingValue = value;
+      pendingRequestId = const Uuid().v4();
+    }
     try {
-      final result = await ApiClient().post('/qr/scan', device: true, idempotent: true, body: {'session_id': widget.sessionId, 'qr_identifier': value});
+      final result = await ApiClient().post('/qr/scan', device: true, idempotent: true, idempotencyKey: pendingRequestId,
+          body: {'session_id': widget.sessionId, 'qr_identifier': value});
       await widget.onValue(result['one_time_token'] as String? ?? value);
+      pendingValue = null;
+      pendingRequestId = null;
       if (mounted) Navigator.pop(context);
     } on ApiError catch (exception) {
+      if (exception.code != 'NETWORK_UNAVAILABLE') {
+        pendingRequestId = null;
+      }
       if (mounted) setState(() { error = exception.userMessage; handled = false; });
+    } catch (_) {
+      if (mounted) setState(() { error = 'برای تأیید QR اتصال اینترنت لازم است.'; handled = false; });
     }
   }
 

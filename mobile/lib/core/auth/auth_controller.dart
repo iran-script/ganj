@@ -2,11 +2,13 @@ import 'package:flutter/foundation.dart';
 
 import '../api/api_client.dart';
 import '../errors/api_error.dart';
+import '../offline/outbox_repository.dart';
 
 class AuthController extends ChangeNotifier {
   AuthController(this.api);
 
   final ApiClient api;
+  final OutboxRepository outbox = OutboxRepository();
   Map<String, dynamic>? user;
   bool loading = true;
   ApiError? error;
@@ -55,13 +57,17 @@ class AuthController extends ChangeNotifier {
     }
   }
 
-  Future<void> logout() async {
+  Future<bool> logout({bool discardPending = false}) async {
+    final pending = (await outbox.all()).where((action) => !['ACKNOWLEDGED', 'FAILED_TERMINAL'].contains(action.status)).isNotEmpty;
+    if (pending && !discardPending) return false;
     try {
       await api.post('/auth/logout', device: true);
     } finally {
+      if (discardPending) await outbox.discardAll();
       await api.clearToken();
       user = null;
       notifyListeners();
     }
+    return true;
   }
 }
