@@ -3,6 +3,7 @@
 namespace App\Services\Organizations;
 
 use App\Enums\OrganizationMemberStatus;
+use App\Enums\OrganizationRole;
 use App\Enums\OrganizationStatus;
 use App\Exceptions\ApiException;
 use App\Models\Organization;
@@ -57,6 +58,14 @@ class OrganizationService
             $settings = new OrganizationSetting;
             $settings->forceFill(['organization_id' => $organization->id])->save();
             $this->events->record('organization.created.v1', $actor, $organization, ['after' => $organization->publicProfile()], $input['reason'] ?? null);
+            if (! $this->scope->isSuperAdmin($actor)) {
+                $member = new OrganizationMember;
+                $member->forceFill(['organization_id' => $organization->id, 'user_id' => $actor->id,
+                    'role' => OrganizationRole::OrganizationAdmin->value,
+                    'status' => OrganizationMemberStatus::Active->value, 'joined_at' => now()])->save();
+                $this->events->record('organization.member_added.v1', $actor, $organization,
+                    ['user_id' => $actor->public_id, 'role' => $member->role, 'after' => $member->publicProfile()], $input['reason'] ?? null);
+            }
 
             return $organization;
         });

@@ -4,6 +4,7 @@ namespace App\Services\Games;
 
 use App\Exceptions\ApiException;
 use App\Models\Game;
+use App\Models\ScenarioVersion;
 use App\Models\User;
 use App\Services\Idempotency\IdempotencyStore;
 use App\Services\Organizations\OrganizationScope;
@@ -15,7 +16,7 @@ use Illuminate\Validation\ValidationException;
 
 class GameService
 {
-    public function __construct(private GameScope $scope, private OrganizationScope $organizations, private GameEvents $events, private IdempotencyStore $idempotency) {}
+    public function __construct(private GameScope $scope, private OrganizationScope $organizations, private GameEvents $events, private IdempotencyStore $idempotency, private ProductionSessionDependencies $configuration) {}
 
     public function execute(User $actor, string $action, array $input, ?string $id = null, ?string $key = null): array
     {
@@ -70,6 +71,14 @@ class GameService
                 $values = array_intersect_key($input, array_flip(['name', 'slug', 'description', 'status', 'default_timezone']));
                 if (isset($values['slug']) && Game::where('organization_id', $game->organization_id)->where('slug', $values['slug'])->when($game->exists, fn (Builder $q): Builder => $q->whereKeyNot($game->id))->exists()) {
                     throw ValidationException::withMessages(['slug' => 'This slug is already used in the organization.']);
+                }
+                if (array_key_exists('pricing', $input)) {
+                    GameInput::reason($input);
+                    $values['pricing'] = $this->configuration->validatePricing($input['pricing']);
+                }
+                if (isset($input['scenario_version_id'])) {
+                    $version = ScenarioVersion::where('public_id', $input['scenario_version_id'])->first();
+                    $values['scenario_version_id'] = $this->configuration->publishedVersion((int) $version?->id, $game->organization_id)->id;
                 }
                 $game->forceFill($values)->save();
                 $this->events->record($action === 'create' ? 'game.created.v1' : 'game.updated.v1', $actor, $game, reason: $input['reason'] ?? null);

@@ -22,6 +22,13 @@ class OrganizationScope
                 ->whereNull('organization_id')->whereNull('resource_type')->whereNull('resource_id')->whereNull('revoked_at')->exists();
     }
 
+    public function canCreateOrganization(User $actor): bool
+    {
+        return $this->isSuperAdmin($actor) || (User::whereKey($actor->id)->where('status', UserStatus::Active->value)->exists()
+            && RoleAssignment::where('user_id', $actor->id)->where('role_code', 'ORGANIZATION_OPERATOR')
+                ->whereNull('organization_id')->whereNull('resource_type')->whereNull('resource_id')->whereNull('revoked_at')->exists());
+    }
+
     public function membership(User $actor, Organization $organization): ?OrganizationMember
     {
         return $organization->members()->where('user_id', $actor->id)->where('status', OrganizationMemberStatus::Active->value)->first();

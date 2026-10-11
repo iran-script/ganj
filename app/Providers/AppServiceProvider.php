@@ -17,9 +17,9 @@ use App\Policies\TeamPolicy;
 use App\Services\Games\BillingGate;
 use App\Services\Games\CancellationResolution;
 use App\Services\Games\PricingSnapshotProvider;
+use App\Services\Games\ProductionSessionDependencies;
 use App\Services\Games\RuntimeBootstrap;
 use App\Services\Games\ScenarioAssignmentReadiness;
-use App\Services\Games\UnavailableSessionDependencies;
 use App\Services\Idempotency\DatabaseIdempotencyStore;
 use App\Services\Idempotency\IdempotencyStore;
 use App\Services\Locations\RuntimeLocationVerification;
@@ -56,7 +56,7 @@ class AppServiceProvider extends ServiceProvider
             $this->app->bind($port, UnavailableRuntimeDomains::class);
         }
         foreach ([BillingGate::class, ScenarioAssignmentReadiness::class, PricingSnapshotProvider::class, CancellationResolution::class] as $port) {
-            $this->app->bind($port, UnavailableSessionDependencies::class);
+            $this->app->bind($port, ProductionSessionDependencies::class);
         }
     }
 

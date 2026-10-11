@@ -20,7 +20,7 @@ class OrganizationPolicy
 
     public function create(User $user): bool
     {
-        return $this->scope->isSuperAdmin($user);
+        return $this->scope->canCreateOrganization($user);
     }
 
     public function view(User $user, Organization $organization): Response

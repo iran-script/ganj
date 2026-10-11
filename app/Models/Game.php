@@ -28,7 +28,7 @@ class Game extends Model
 
     protected function casts(): array
     {
-        return ['archived_at' => 'immutable_datetime'];
+        return ['archived_at' => 'immutable_datetime', 'pricing' => 'array'];
     }
 
     public function organization(): BelongsTo

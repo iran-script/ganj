@@ -46,7 +46,7 @@ NEXO_HTTP_PORT=18100
 ```
 
 The sole published port is `127.0.0.1:18100:80`. Check availability first; if occupied,
-stop and explicitly choose an available port in 18101–18199 via NEXO_HTTP_PORT.
+stop and explicitly choose an available port in 18101أ¢â‚¬â€œ18199 via NEXO_HTTP_PORT.
 PostgreSQL and Redis have no published ports. All six services use only the NEXO
 network, bounded memory, rotating Docker logs, and `unless-stopped` restart policies.
 Storage, PostgreSQL, and Redis AOF use separate persistent named volumes. PHP runs as
@@ -171,3 +171,42 @@ readability, not recoverability. Do not archive a live PostgreSQL volume as if i
 were a consistent backup. Back up application storage and the server-only .env
 securely; keep APP_KEY available for recovery. Redis AOF is persistent but does not
 replace backups of PostgreSQL, application files, and critical configuration.
+
+
+## Production session admission
+
+Games require explicit `pricing` (`mode`: `FREE` or `PAID`, integer `amount`
+in currency minor units, and a three-letter uppercase `currency`) and a
+`scenario_version_id` public UUID. Configure these through the authorized
+Game service/API. Pricing changes require an audit reason. Missing prices
+never imply free admission. A FREE price must have amount zero; PAID must
+have a positive amount. Paid admission remains pending until payment
+infrastructure is implemented; this release does not claim paid settlement.
+
+The additive production-session migration adds nullable game configuration
+and append-only `session_configuration_snapshots`. Opening registration pins
+the configured price and published, same-organization scenario version.
+Subsequent game edits apply to future sessions. Billing references prefixed
+`free-exemption:` refer to this persisted zero-charge configuration, not a
+payment transaction. Start embeds these references in the existing immutable
+roster snapshots; Runtime pins the published version through its existing
+initializer. Team eligibility (4?8 members), bound devices, four ready
+players, and lifecycle authorization remain enforced by existing services.
+Teams join after registration opens, so roster readiness is checked at
+registration/close/start rather than requiring a roster in DRAFT.
+
+The local CLI command `php artisan nexo:operator:create <existing-mobile>
+--reason="Authorized operational purpose"` grants only organization creation.
+It does not create a user or grant SuperAdmin, global role administration,
+archive capability, or access to other tenants. An operator becomes the
+OrganizationAdmin of each organization they create. Grants are idempotent
+and audited. There is no web bootstrap route. Revoke the global capability
+through an explicitly authorized operational procedure; existing scoped
+memberships are independent.
+
+Back up PostgreSQL before this migration using the backup procedure above.
+Existing games retain null configuration and fail closed until configured.
+Rollback drops configuration/snapshot data and is intended only for empty
+local validation databases. It refuses when admission snapshots or operator grant history exist.
+Use a forward fix for populated production deployments; do not erase audit
+history to force rollback. No production fixture or credentials are seeded.
