@@ -13,6 +13,7 @@ use App\Services\Audit\AuditService;
 use App\Services\Games\GameScope;
 use App\Services\Idempotency\IdempotencyStore;
 use App\Services\Runtime\RuntimeRoles;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Validator;
@@ -54,6 +55,9 @@ class QrService
             }
             $previous = $trigger->status;
             $trigger->forceFill(['status' => $status])->save();
+            if ($status !== 'ACTIVE') {
+                DB::table('trigger_tokens')->where('qr_trigger_id', $trigger->id)->whereNull('consumed_at')->whereNull('revoked_at')->update(['revoked_at' => now()]);
+            }
             $this->audit->record('qr.trigger_'.$status.'.v1', 'qr_trigger', $trigger->public_id, null,
                 ['from_status' => $previous, 'to_status' => $status], $actor->id, $trigger->organization_id);
 
@@ -63,16 +67,33 @@ class QrService
 
     public function scan(User $actor, UserDevice $device, array $input, string $idempotencyKey): array
     {
+        $result = DB::transaction(fn (): array => $this->scanLocked($actor, $device, $input, $idempotencyKey));
+        if (isset($result['error'])) {
+            throw new ApiException($result['error']['code'], $result['error']['message'], [], $result['error']['status']);
+        }
+
+        return $result;
+    }
+
+    private function scanLocked(User $actor, UserDevice $device, array $input, string $idempotencyKey): array
+    {
         Validator::make($input, ['session_id' => 'required|uuid', 'qr_identifier' => 'required|string|min:16|max:512', 'location_event_id' => 'sometimes|nullable|integer'])->validate();
         Validator::make(['key' => $idempotencyKey], ['key' => 'required|string|min:8|max:255'])->validate();
         $fingerprint = hash('sha256', json_encode(['actor' => $actor->public_id, 'device' => $device->public_id, 'input' => $input], JSON_THROW_ON_ERROR));
+        User::whereKey($actor->id)->lockForUpdate()->firstOrFail()->ensureActive();
+        $session = $this->scope->resolve($actor, $input['session_id'], true, true);
+        $participant = GameSessionPlayer::where('game_session_id', $session->id)->where('user_id', $actor->id)->lockForUpdate()->first();
+        $bound = UserDevice::whereKey($device->id)->where('user_id', $actor->id)->whereNull('revoked_at')->lockForUpdate()->first();
+        if (! $participant || in_array($participant->participation_status, ['REMOVED', 'DISQUALIFIED'], true)) {
+            throw new ApiException('RESOURCE_NOT_FOUND', 'The Session participation was not found.', [], 404);
+        }
+        if (! $bound || $participant->active_device_id !== $bound->id || $participant->roster_frozen_at === null) {
+            return $this->reject($participant, null, null, 'DEVICE_NOT_BOUND', 'DEVICE_NOT_BOUND');
+        }
         $key = 'qr:'.hash('sha256', $idempotencyKey);
         $reserved = $this->idempotency->reserve($key, $fingerprint);
         if ($reserved['status'] === 'completed') {
             $saved = $reserved['response']['data'];
-            if (isset($saved['error'])) {
-                throw new ApiException($saved['error']['code'], $saved['error']['message'], [], $saved['error']['status']);
-            }
 
             return $saved;
         }
@@ -111,7 +132,7 @@ class QrService
                     return $this->reject($player, $node, $trigger, 'NODE_NOT_ACTIVE', 'ACTION_NOT_ALLOWED');
                 }
                 try {
-                    $this->roles->eligible($instance, $node, $player);
+                    $this->roles->eligible($instance, $node, $player, $device);
                 } catch (ApiException $exception) {
                     return $this->reject($player, $node, $trigger, 'WRONG_PLAYER_ROLE', $exception->errorCode === 'ACTION_NOT_ALLOWED' ? 'ACTION_NOT_ALLOWED' : $exception->errorCode);
                 }
@@ -130,7 +151,7 @@ class QrService
                     $checkpointIds = array_values(array_unique(array_filter([$trigger->checkpoint_id, $nodeCheckpointId])));
                     $evaluation = DB::table('geofence_evaluations')->where('player_id', $player->id)->where('node_instance_id', $node->id)->latest('id')->first();
                     $maxAge = (int) ($node->node->config['max_location_age_seconds'] ?? config('location.fresh_seconds'));
-                    if (! $evaluation || $evaluation->result !== 'INSIDE' || now()->diffInSeconds($evaluation->evaluated_at) > $maxAge
+                    if (! $evaluation || $evaluation->result !== 'INSIDE' || Carbon::parse($evaluation->evaluated_at)->diffInSeconds(now()) > $maxAge || ($evaluation && Carbon::parse($evaluation->evaluated_at)->isFuture())
                         || count($checkpointIds) !== 1 || $evaluation->checkpoint_id !== $checkpointIds[0]) {
                         return $this->reject($player, $node, $trigger, 'OUTSIDE_ALLOWED_AREA', 'QR_OUTSIDE_ALLOWED_AREA');
                     }
@@ -155,14 +176,10 @@ class QrService
             $response = ['data' => ['error' => ['code' => $exception->errorCode, 'message' => 'The QR scan was rejected.', 'status' => $exception->status]]];
             $this->idempotency->complete($key, $fingerprint, $exception->status, $response);
 
-            throw $exception;
+            return $response['data'];
         }
         $response = ['data' => $result];
         $this->idempotency->complete($key, $fingerprint, 200, $response);
-
-        if (isset($result['error'])) {
-            throw new ApiException($result['error']['code'], $result['error']['message'], [], $result['error']['status']);
-        }
 
         return $result;
     }

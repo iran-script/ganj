@@ -29,10 +29,15 @@ class _HomePageState extends State<HomePage> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('عملیات در انتظار همگام‌سازی'),
-        content: const Text('پیش از خروج، عملیات باقی‌مانده را همگام‌سازی کنید یا آن‌ها را حذف کنید.'),
+        content: const Text(
+            'پیش از خروج، عملیات باقی‌مانده را همگام‌سازی کنید یا آن‌ها را حذف کنید.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('انصراف')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('حذف و خروج')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('انصراف')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('حذف و خروج')),
         ],
       ),
     );
@@ -41,24 +46,50 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('بازی‌های من'), actions: [IconButton(onPressed: logout, icon: const Icon(Icons.logout))]),
+        appBar: AppBar(title: const Text('بازی‌های من'), actions: [
+          IconButton(onPressed: logout, icon: const Icon(Icons.logout))
+        ]),
         body: FutureBuilder<Map<String, dynamic>>(
           future: sessions,
           builder: (context, snapshot) {
-            if (snapshot.connectionState != ConnectionState.done) return const Center(child: CircularProgressIndicator());
-            if (snapshot.hasError) return _ErrorView(onRetry: () => setState(() => sessions = ApiClient().get('/game-sessions')));
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return _ErrorView(
+                  onRetry: () => setState(
+                      () => sessions = ApiClient().get('/game-sessions')));
+            }
             final data = snapshot.data ?? {};
-            final items = (data['data'] ?? data['items'] ?? data['sessions'] ?? []) as List<dynamic>;
-            if (items.isEmpty) return const Center(child: Text('جلسه فعالی پیدا نشد.'));
+            final items = (data['data'] ??
+                data['items'] ??
+                data['sessions'] ??
+                []) as List<dynamic>;
+            if (items.isEmpty) {
+              return const Center(child: Text('جلسه فعالی پیدا نشد.'));
+            }
             return RefreshIndicator(
-              onRefresh: () async => setState(() => sessions = ApiClient().get('/game-sessions')),
+              onRefresh: () async =>
+                  setState(() => sessions = ApiClient().get('/game-sessions')),
               child: ListView.builder(
                 padding: const EdgeInsets.all(16),
                 itemCount: items.length,
                 itemBuilder: (context, index) {
                   final session = items[index] as Map<String, dynamic>;
                   final id = session['id'] as String?;
-                  return Card(child: ListTile(title: Text(session['name'] as String? ?? 'جلسه بازی'), subtitle: Text(session['status'] as String? ?? ''), trailing: const Icon(Icons.chevron_left), onTap: id == null ? null : () => Navigator.push(context, MaterialPageRoute(builder: (_) => GameplayPage(sessionId: id)))));
+                  return Card(
+                      child: ListTile(
+                          title:
+                              Text(session['name'] as String? ?? 'جلسه بازی'),
+                          subtitle: Text(session['status'] as String? ?? ''),
+                          trailing: const Icon(Icons.chevron_left),
+                          onTap: id == null
+                              ? null
+                              : () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (_) =>
+                                          GameplayPage(sessionId: id)))));
                 },
               ),
             );
@@ -73,5 +104,10 @@ class _ErrorView extends StatelessWidget {
   final VoidCallback onRetry;
 
   @override
-  Widget build(BuildContext context) => Center(child: Column(mainAxisSize: MainAxisSize.min, children: [const Text('اتصال برقرار نشد.'), const SizedBox(height: 12), OutlinedButton(onPressed: onRetry, child: const Text('تلاش دوباره'))]));
+  Widget build(BuildContext context) => Center(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Text('اتصال برقرار نشد.'),
+        const SizedBox(height: 12),
+        OutlinedButton(onPressed: onRetry, child: const Text('تلاش دوباره'))
+      ]));
 }

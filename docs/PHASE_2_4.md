@@ -22,3 +22,11 @@ The backend remains authoritative. The client never decides Runtime progression,
 8. Android physical-device smoke verification.
 
 Office toolchain checks are pending the local Flutter dependency/toolchain run.
+
+## Final home verification — 2026-10-11
+
+Status: **COMPLETE — PHYSICAL PILOT SMOKE PENDING**. The office checklist above is historical.
+
+Flutter clean, pub get, Dart format (33 files, zero changes), analyze (no issues), and all 31 Flutter tests passed. The total includes a new timeout widget regression. Login coverage verifies the backend envelope, visible invalid-credential/network/timeout errors, token write/read, restored Bearer header, stable device UUID and the form remaining mounted during a pending request. Diagnostics do not print raw passwords or tokens.
+
+Debug APK build passed at mobile/build/app/outputs/flutter-apk/app-debug.apk; it is an ignored local artifact. No local physical-device API IP is committed or supplied to this build. Android embedding v2, camera/location permissions and repository mirror configuration are preserved. Physical backend login, device binding, camera/GPS, role-gated gameplay and reconnect pilot checks remain pending. Dependency updates and release signing are outside this verification.

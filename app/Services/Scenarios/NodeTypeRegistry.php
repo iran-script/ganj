@@ -13,7 +13,7 @@ class NodeTypeRegistry
     {
         $duration = ['duration_seconds' => 'required|integer|min:1|max:86400'];
         $puzzle = ['prompt' => 'required|string|max:10000', 'expected_answer' => 'required|string|max:1000', 'max_attempts' => 'sometimes|nullable|integer|min:1|max:1000',
-            'case_sensitive' => 'required|boolean', 'trim_whitespace' => 'required|boolean', 'hints' => 'sometimes|array|list|max:3', 'hints.*' => 'string|max:2000'];
+            'case_sensitive' => 'required|boolean', 'trim_whitespace' => 'required|boolean', 'hints' => 'sometimes|array|list|max:3', 'hints.*' => 'string|max:2000', 'offline_submission_allowed' => 'sometimes|boolean'];
         $roles = ['roles' => 'required|array|list|min:1|max:4', 'roles.*' => 'required|string|in:SCANNER,NAVIGATOR,DECODER,AR_OPERATOR'];
         $entries = [
             'Start' => [[], []], 'Finish' => [[], []], 'Branch' => [[], []], 'Condition' => [['condition_group_id' => 'required|uuid'], []],
@@ -23,10 +23,14 @@ class NodeTypeRegistry
             'Show Video' => [['asset_id' => 'required|uuid', 'checksum' => 'required|string|regex:/^[a-f0-9]{64}$/'], ['media']],
             'GPS / Location' => [['checkpoint_id' => 'required|uuid', 'min_accuracy' => 'required|numeric|min:1|max:1000', 'required_player_count' => 'required|integer|min:1|max:8', 'dwell_time' => 'required|integer|min:0|max:86400'] + app(LocationInput::class)->policyRules(), ['checkpoint']],
             'Checkpoint' => [['checkpoint_id' => 'required|uuid'], ['checkpoint']],
-            'QR' => [['trigger_id' => 'required|uuid'], ['qr']],
+            'QR' => [['trigger_id' => 'required|uuid', 'checkpoint_id' => 'sometimes|uuid',
+                'role_policy' => 'sometimes|in:ANY_TEAM_MEMBER,ACTIVE_SLOT,SPECIFIC_ROLE,SPECIFIC_PLAYER',
+                'role_code' => 'required_if:role_policy,SPECIFIC_ROLE|in:SCANNER,NAVIGATOR,DECODER,AR_OPERATOR',
+                'specific_player_id' => 'required_if:role_policy,SPECIFIC_PLAYER|uuid',
+                'max_location_age_seconds' => 'sometimes|integer|min:1|max:300', 'token_ttl_seconds' => 'sometimes|integer|min:1|max:300'], ['qr']],
             'Puzzle' => [$puzzle, []], 'Password' => [$puzzle, []], 'Text Answer' => [$puzzle, []],
             'Multiple Choice' => [['prompt' => 'required|string|max:10000', 'options' => 'required|array|min:2|max:20', 'options.*' => 'required|string|max:1000',
-                'correct_option_refs' => 'required|array|list|min:1|max:20', 'correct_option_refs.*' => 'required|string', 'multi_select' => 'required|boolean'], []],
+                'correct_option_refs' => 'required|array|list|min:1|max:20', 'correct_option_refs.*' => 'required|string', 'multi_select' => 'required|boolean', 'offline_submission_allowed' => 'sometimes|boolean'], []],
             'Assign Roles' => [$roles, []], 'Swap Roles' => [$roles, []],
             'Specific Player' => [['role' => 'required|string|in:SCANNER,NAVIGATOR,DECODER,AR_OPERATOR'], []],
             'Random Player' => [[], []], 'Team Together' => [['minimum_player_count' => 'required|integer|min:1|max:8', 'required_roles' => 'sometimes|array|list|max:4', 'required_roles.*' => 'string|in:SCANNER,NAVIGATOR,DECODER,AR_OPERATOR', 'active_slot_only' => 'sometimes|boolean', 'synchronization_window_seconds' => 'sometimes|integer|min:1|max:86400', 'support_policy' => 'sometimes|string|in:COLLABORATE,DENY'], []],

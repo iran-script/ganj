@@ -107,7 +107,7 @@ class RuntimeEngine
             }
             $command->forceFill(['status' => 'PROCESSING'])->save();
             try {
-                $result = DB::transaction(function () use ($actor, $type, $input, $instance, $session, $node, $player, $command, $operational): array {
+                $result = DB::transaction(function () use ($actor, $type, $input, $instance, $session, $node, $player, $command, $operational, $device): array {
                     $this->validate($type, $input);
                     if (! in_array($session->status, ['RUNNING', 'PAUSED'], true)) {
                         throw new ApiException('STATE_TRANSITION_INVALID', 'Session gameplay is closed.', [], 409);

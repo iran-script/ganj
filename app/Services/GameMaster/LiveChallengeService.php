@@ -104,9 +104,14 @@ class LiveChallengeService
 
     public function create(User $actor, string $sessionId, array $input, string $key): array
     {
+        return DB::transaction(fn (): array => $this->createLocked($actor, $sessionId, $input, $key));
+    }
+
+    private function createLocked(User $actor, string $sessionId, array $input, string $key): array
+    {
         $session = $this->operatorSession($actor, $sessionId);
         $this->requiredKey($key);
-        $fingerprint = $this->fingerprint('create', $session->public_id, $input);
+        $fingerprint = $this->fingerprint('create', $session->public_id, $input + ['actor' => $actor->public_id]);
         $saved = $this->idempotency->reserve('live-challenge:'.hash('sha256', $key), $fingerprint);
         if ($saved['status'] === 'completed') {
             return $saved['response']['data'];
@@ -145,6 +150,16 @@ class LiveChallengeService
 
     public function transition(User $actor, string $challengeId, string $action, array $input, string $key): array
     {
+        $result = DB::transaction(fn (): array => $this->transitionLocked($actor, $challengeId, $action, $input, $key));
+        if (isset($result['error'])) {
+            throw new ApiException('STATE_TRANSITION_INVALID', 'The Challenge has expired.', [], 409);
+        }
+
+        return $result;
+    }
+
+    private function transitionLocked(User $actor, string $challengeId, string $action, array $input, string $key): array
+    {
         $this->requiredKey($key);
         $challenge = LiveChallenge::where('public_id', $challengeId)->with('targets')->first();
         if (! $challenge) {
@@ -164,6 +179,7 @@ class LiveChallengeService
         }
         $result = DB::transaction(function () use ($actor, $challengeId, $action, $input, $session, $operator, $target): array {
             $challenge = LiveChallenge::where('public_id', $challengeId)->with('targets')->lockForUpdate()->firstOrFail();
+            $target = $this->targetForActor($challenge, $actor, $session);
             if ($action === 'cancel') {
                 if (! $operator || trim((string) ($input['reason'] ?? '')) === '') {
                     throw new ApiException('AUTHORIZATION_DENIED', 'Assigned GameMaster access and a reason are required.', [], 403);
@@ -180,11 +196,15 @@ class LiveChallengeService
             if (! $target) {
                 throw $this->notFound();
             }
-            if ($challenge->expires_at && $challenge->expires_at->isPast() && ! in_array($challenge->status, ['COMPLETED', 'CANCELLED', 'EXPIRED'], true)) {
+            if ($challenge->expires_at && $challenge->expires_at->lessThanOrEqualTo(now()) && ! in_array($challenge->status, ['COMPLETED', 'CANCELLED', 'EXPIRED'], true)) {
                 $challenge->forceFill(['status' => 'EXPIRED'])->save();
                 $challenge->targets()->whereNotIn('status', ['COMPLETED', 'FAILED', 'CANCELLED'])->update(['status' => 'EXPIRED']);
                 $this->event('live_challenge.expired.v1', $challenge, $actor, []);
-                throw new ApiException('STATE_TRANSITION_INVALID', 'The Challenge has expired.', [], 409);
+
+                return ['error' => 'CHALLENGE_EXPIRED'];
+            }
+            if (! in_array($action, ['ack', 'start', 'submit'], true) || $challenge->status !== 'ACTIVE') {
+                throw new ApiException('STATE_TRANSITION_INVALID', 'The Challenge is not active.', [], 409);
             }
             if ($action === 'ack') {
                 if (! in_array($target->status, ['SENT', 'SEEN'], true)) {
@@ -223,6 +243,11 @@ class LiveChallengeService
     }
 
     public function message(User $actor, string $sessionId, array $input, string $key): array
+    {
+        return DB::transaction(fn (): array => $this->messageLocked($actor, $sessionId, $input, $key));
+    }
+
+    private function messageLocked(User $actor, string $sessionId, array $input, string $key): array
     {
         $session = $this->operatorSession($actor, $sessionId);
         $this->requiredKey($key);
@@ -266,6 +291,11 @@ class LiveChallengeService
     }
 
     public function disqualify(User $actor, string $sessionId, string $playerId, array $input, string $key): array
+    {
+        return DB::transaction(fn (): array => $this->disqualifyLocked($actor, $sessionId, $playerId, $input, $key));
+    }
+
+    private function disqualifyLocked(User $actor, string $sessionId, string $playerId, array $input, string $key): array
     {
         $session = $this->operatorSession($actor, $sessionId);
         $this->requiredKey($key);
@@ -325,7 +355,7 @@ class LiveChallengeService
 
     private function targetForActor(LiveChallenge $challenge, User $actor, GameSession $session): ?LiveChallengeTarget
     {
-        $player = $session->players()->where('user_id', $actor->id)->with('registration.team')->first();
+        $player = $session->players()->where('user_id', $actor->id)->whereIn('participation_status', ['READY', 'ACTIVE', 'DISCONNECTED'])->with('registration.team')->first();
         if (! $player) {
             return null;
         }
@@ -371,9 +401,6 @@ class LiveChallengeService
 
     private function profile(LiveChallenge $challenge, bool $operator, ?LiveChallengeTarget $target = null): array
     {
-        if ($challenge->expires_at && $challenge->expires_at->isPast() && in_array($challenge->status, ['DRAFT', 'SCHEDULED', 'ACTIVE'], true)) {
-            $challenge->forceFill(['status' => 'EXPIRED'])->save();
-        }
         $data = ['id' => $challenge->public_id, 'type' => $challenge->type, 'status' => $challenge->status, 'priority' => $challenge->priority,
             'starts_at' => $challenge->starts_at?->toISOString(), 'expires_at' => $challenge->expires_at?->toISOString(), 'interrupt_policy' => $challenge->interrupt_policy,
             'fairness_class' => $challenge->fairness_class, 'config' => $challenge->config, 'targets' => $challenge->targets->map(fn (LiveChallengeTarget $item): array => [

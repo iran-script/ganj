@@ -34,3 +34,9 @@ Score never marks Runtime Nodes complete. Runtime remains progression authority.
 12. Phase 0–2.2 regression suite.
 
 No release commit or push was created in office mode.
+
+## Final home verification — 2026-10-11
+
+Status: **COMPLETE** for the implemented backend phase. The office checklist above is historical.
+
+Canonical full suite: 555 passed / 9,108 assertions; zero failures, errors or skips. HintConsumptionTest passed 2 cases and ScoringConcurrencyTest passed all 8 cases: sequential hints, hint retries, simultaneous deltas, duplicate completion, finalize, finalize versus delta, manual retry and projection rebuild. Scoring/hint migration fresh and rollback/reapply passed on urban_ar_test. Deferred commerce/entitlement behavior remains fail-closed.

@@ -54,3 +54,9 @@ Run in order:
 11. Phase 0–2.1 regressions.
 
 Office results do not constitute Phase 2.2 completion.
+
+## Final home verification — 2026-10-11
+
+Status: **COMPLETE** for the implemented backend phase. The office checklist above is historical.
+
+The canonical full suite passed 555 tests / 9,108 assertions with zero failures, errors or skips. Co-op contract (4 cases), Runtime mechanics (25 cases), and PostgreSQL contention for final barrier contributions, fifth role-slot assignment, Relay advance, role reassignment and late join passed. Split subgroup eligibility and metadata preservation are covered. No Phase 2.2 migration was introduced. Docker build and all six canonical services passed.

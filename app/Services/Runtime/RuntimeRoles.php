@@ -78,24 +78,28 @@ class RuntimeRoles
         if ($type === 'QR' && $policy === 'ANY_TEAM_MEMBER') {
             return;
         }
+        if ($type === 'QR' && in_array($policy, ['ACTIVE_SLOT', 'SPECIFIC_ROLE', 'SPECIFIC_PLAYER'], true)) {
+            $assigned = PlayerRoleAssignment::where('team_scenario_instance_id', $instance->id)->whereNull('released_at')
+                ->where('game_session_player_id', $player->id);
+            $allowed = match ($policy) {
+                'ACTIVE_SLOT' => $assigned->exists(),
+                'SPECIFIC_ROLE' => $assigned->where('role_code', $node->node->config['role_code'])->exists(),
+                'SPECIFIC_PLAYER' => ($node->state_json['selected_player_id'] ?? $node->node->config['specific_player_id'] ?? null) === $player->public_id,
+            };
+            if (! $allowed) {
+                throw new ApiException('ACTION_NOT_ALLOWED', 'The QR policy does not allow this Player.', [], 403);
+            }
+
+            return;
+        }
         $required = ['QR' => 'SCANNER', 'GPS / Location' => 'NAVIGATOR', 'Checkpoint' => 'NAVIGATOR',
             'AR Challenge' => 'AR_OPERATOR', 'Puzzle' => 'DECODER', 'Password' => 'DECODER', 'Text Answer' => 'DECODER', 'Multiple Choice' => 'DECODER'];
         $role = $type === 'Specific Player' ? $node->node->config['role'] : ($required[$type] ?? null);
-        if ($type === 'QR' && $policy === 'SPECIFIC_ROLE') {
-            $role = $node->node->config['role_code'] ?? $role;
-        }
         $active = PlayerRoleAssignment::where('team_scenario_instance_id', $instance->id)->whereNull('released_at');
-        if ($type === 'QR' && $policy === 'ACTIVE_SLOT' && ! (clone $active)->where('game_session_player_id', $player->id)->exists()) {
-            throw new ApiException('ACTION_NOT_ALLOWED', 'The current runtime slot does not allow this action.', [], 403);
-        }
         if ($role && ($type === 'Specific Player' || (clone $active)->exists()) && ! (clone $active)->where('game_session_player_id', $player->id)->where('role_code', $role)->exists()) {
             throw new ApiException('ACTION_NOT_ALLOWED', 'The current runtime role does not allow this action.', [], 403);
         }
         if ($type === 'Random Player' && ($node->state_json['selected_player_id'] ?? null) !== $player->public_id) {
-            throw new ApiException('ACTION_NOT_ALLOWED', 'This task belongs to another selected Player.', [], 403);
-        }
-        if ($type === 'QR' && $policy === 'SPECIFIC_PLAYER'
-            && ($node->state_json['selected_player_id'] ?? $node->node->config['specific_player_id'] ?? null) !== $player->public_id) {
             throw new ApiException('ACTION_NOT_ALLOWED', 'This task belongs to another selected Player.', [], 403);
         }
     }

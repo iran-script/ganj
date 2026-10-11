@@ -7,3 +7,9 @@ pubspec.lock
 .flutter-plugins
 .flutter-plugins-dependencies
 .metadata
+
+# Generated iOS build configuration and plugin registration.
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+ios/Flutter/ephemeral/
+ios/Runner/GeneratedPluginRegistrant.*

@@ -10,3 +10,5 @@ Artisan::command('inspire', function () {
 
 Schedule::command('runtime:expire-timers')->everyMinute()->withoutOverlapping();
 Schedule::command('location:maintain-history')->hourly()->withoutOverlapping();
+
+Schedule::command('outbox:dispatch')->everyTenSeconds()->withoutOverlapping();

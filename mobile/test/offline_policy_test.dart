@@ -11,14 +11,16 @@ void main() {
   });
 
   test('delayed puzzle submission is online preferred with queue fallback', () {
-    expect(classifyAction('puzzle_submission'), OperationClass.onlinePreferredWithQueueFallback);
+    expect(classifyAction('puzzle_submission'),
+        OperationClass.onlinePreferredWithQueueFallback);
     expect(classifyAction('runtime_projection'), OperationClass.cacheableRead);
   });
 
   test('retry policy is bounded and increases delay', () {
     const policy = RetryPolicy();
     expect(policy.canRetry(0), isTrue);
-    expect(policy.nextDelay(2, jitterSeed: 1), greaterThan(policy.nextDelay(1, jitterSeed: 1)));
+    expect(policy.nextDelay(2, jitterSeed: 1),
+        greaterThan(policy.nextDelay(1, jitterSeed: 1)));
     expect(policy.nextDelay(99), lessThanOrEqualTo(policy.maxDelay));
   });
 
@@ -33,7 +35,9 @@ void main() {
       createdAt: DateTime.utc(2026, 1, 1),
     );
 
-    expect(OutboxAction.fromMap(action.toMap()).clientActionId, 'stable-action-id');
-    expect(action.copyWith(retryCount: 1).clientActionId, action.clientActionId);
+    expect(OutboxAction.fromMap(action.toMap()).clientActionId,
+        'stable-action-id');
+    expect(
+        action.copyWith(retryCount: 1).clientActionId, action.clientActionId);
   });
 }

@@ -70,17 +70,35 @@ class RuntimeMechanicsTest extends TestCase
             ['edge_key' => 'left_end', 'from_node' => 'task', 'to_node' => 'finish', 'priority' => 0],
             ['edge_key' => 'right_end', 'from_node' => 'other', 'to_node' => 'finish', 'priority' => 0],
         ];
-        [, , $instance, $player, $node] = $this->runtimeFixture($graph);
-        $this->assertSame(2, TeamNodeInstance::where('status', 'AVAILABLE')->count());
+        [, $session, $instance, , $node] = $this->runtimeFixture($graph);
         $other = TeamNodeInstance::whereHas('node', fn ($q) => $q->where('node_key', 'other'))->sole();
+        $members = $node->state_json['subgroup_member_ids'];
+        $otherMembers = $other->state_json['subgroup_member_ids'];
+        $player = $instance->registration->players()->where('public_id', $members[0])->sole();
+        $otherPlayer = $instance->registration->players()->where('public_id', $otherMembers[0])->sole();
+        $this->assertCount(2, $members);
+        $this->assertCount(2, $otherMembers);
+        $this->assertSame([], array_intersect($members, $otherMembers));
+        $this->assertSame(2, TeamNodeInstance::where('status', 'AVAILABLE')->count());
+
+        $this->assertDomainError('ACTION_NOT_ALLOWED', fn () => $this->runtimeAction($otherPlayer, $node, 'start_node'));
         $this->runtimeAction($player, $node, 'start_node');
-        $this->runtimeAction($player, $other, 'start_node');
+        $this->runtimeAction($otherPlayer, $other, 'start_node');
         $this->assertSame(2, TeamNodeInstance::where('status', 'ACTIVE')->count());
+        $this->assertDomainError('ACTION_NOT_ALLOWED', fn () => $this->runtimeAction($player, $other, 'submit_action', ['acknowledged' => true]));
+        $this->assertSame('ACTIVE', $other->fresh()->status);
+
+        $engine = app(RuntimeEngine::class);
+        $engine->execute($player->user, 'disconnect_player', $instance->public_id, [], 'split-disconnect', $player->device);
+        $engine->execute($player->user, 'reconnect_player', $instance->public_id, [], 'split-reconnect', $player->device);
+        $engine->read($player->user, $session->public_id, self: true, device: $player->device);
+        $this->assertSame($members, $node->fresh()->state_json['subgroup_member_ids']);
+        $this->assertSame($otherMembers, $other->fresh()->state_json['subgroup_member_ids']);
         $this->runtimeAction($player, $node, 'submit_action', ['acknowledged' => true]);
         $finish = TeamNodeInstance::whereHas('node', fn ($q) => $q->where('node_type', 'Finish'))->sole();
         $this->runtimeAction($player, $finish, 'start_node');
         $this->assertDomainError('ACTION_NOT_ALLOWED', fn () => $this->runtimeAction($player, $finish, 'complete_node', ['acknowledged' => true]));
-        $this->runtimeAction($player, $other, 'submit_action', ['acknowledged' => true]);
+        $this->runtimeAction($otherPlayer, $other, 'submit_action', ['acknowledged' => true]);
         $this->runtimeAction($player, $finish, 'complete_node', ['acknowledged' => true]);
         $this->assertSame('COMPLETED', $instance->fresh()->status);
     }

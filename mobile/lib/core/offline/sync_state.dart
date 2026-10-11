@@ -1,6 +1,13 @@
 import 'package:flutter/foundation.dart';
 
-enum SyncState { online, reconnecting, offline, syncing, actionPending, syncError }
+enum SyncState {
+  online,
+  reconnecting,
+  offline,
+  syncing,
+  actionPending,
+  syncError
+}
 
 class SyncStatus extends ChangeNotifier {
   SyncState state = SyncState.online;

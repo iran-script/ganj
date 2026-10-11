@@ -111,7 +111,7 @@ class RuntimeHandlers
             throw new ApiException('ACTION_NOT_ALLOWED', 'The current Relay step belongs to another role.', [], 403);
         }
         $next = $index + 1;
-        $node->forceFill(['state_json' => ['relay_index' => $next, 'current_role' => $roles[$next] ?? null]])->save();
+        $node->forceFill(['state_json' => array_replace($node->state_json ?? [], ['relay_index' => $next, 'current_role' => $roles[$next] ?? null])])->save();
 
         return ['accepted' => true, 'complete' => $next >= count($roles), 'result' => 'ACCEPTED', 'relay_index' => $next];
     }

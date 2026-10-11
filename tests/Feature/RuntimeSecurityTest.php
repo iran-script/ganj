@@ -7,6 +7,7 @@ use App\Models\TeamScenarioInstance;
 use App\Models\User;
 use App\Models\UserDevice;
 use App\Services\Runtime\RuntimeEngine;
+use App\Services\Runtime\RuntimeRoles;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\RuntimeFixtures;
@@ -46,6 +47,21 @@ class RuntimeSecurityTest extends TestCase
         }
         $this->assertSame($instance->public_id, $response->json('data.id'));
         $this->withHeader('Idempotency-Key', 'numeric-id-key')->postJson('/api/v1/runtime/nodes/'.$node->id.'/start')->assertNotFound();
+    }
+
+    public function test_role_content_cannot_expose_answers_or_override_offline_policy(): void
+    {
+        $config = ['prompt' => 'Public', 'expected_answer' => 'Secret', 'case_sensitive' => true, 'trim_whitespace' => true, 'offline_submission_allowed' => false,
+            'role_content' => ['DECODER' => ['prompt' => 'Private clue', 'expected_answer' => 'Secret', 'future_hint' => 'Hidden', 'offline_submission_allowed' => true]]];
+        [, $session, $instance, $player, $node] = $this->runtimeFixture($this->runtimeGraph('Password', $config));
+        app(RuntimeRoles::class)->assign($instance, $node, $player, 'DECODER', 1, 'GAMEMASTER');
+        $this->authenticateGame($player->user, $player->device);
+        $response = $this->getJson('/api/v1/game-sessions/'.$session->public_id.'/players/me/runtime')->assertOk();
+        $json = $response->getContent();
+        $this->assertStringContainsString('Private clue', $json);
+        $this->assertStringNotContainsString('Secret', $json);
+        $this->assertStringNotContainsString('future_hint', $json);
+        $this->assertStringNotContainsString('"offline_submission_allowed":true', $json);
     }
 
     public function test_other_team_and_cross_tenant_cannot_read_or_mutate_runtime(): void

@@ -30,14 +30,20 @@ trait RuntimeFixtures
                 ['edge_key' => 'exit', 'from_node' => 'task', 'to_node' => 'finish', 'priority' => 0]], 'variables' => [], 'conditions' => [], 'subflows' => []];
     }
 
-    protected function runtimeFixture(?array $graph = null, int $teamCount = 1, int $playerCount = 4): array
+    protected function runtimeFixture(?array $graph = null, int $teamCount = 1, int $playerCount = 4, ?callable $beforePublish = null, ?int $readyCount = null): array
     {
         $this->adapters();
         [$admin, , $session] = $this->sessionFixture();
         for ($i = 0; $i < $teamCount; $i++) {
             $this->registerFixture($session, $playerCount);
         }
-        $this->readyFixture($session, $playerCount);
+        $this->readyFixture($session, $readyCount ?? $playerCount);
+        if ($beforePublish !== null) {
+            $customGraph = $beforePublish($session);
+            if (is_array($customGraph) && isset($customGraph['nodes'])) {
+                $graph = $customGraph;
+            }
+        }
         $scenario = Scenario::factory()->create(['organization_id' => $session->organization_id, 'created_by' => $admin->id]);
         $version = ScenarioVersion::factory()->create(['scenario_id' => $scenario->id]);
         app(ScenarioService::class)->execute($admin, 'saveGraph', ($graph ?? $this->runtimeGraph()) + ['revision_token' => $version->revision_token], $version->public_id);

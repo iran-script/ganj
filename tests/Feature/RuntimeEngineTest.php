@@ -14,9 +14,11 @@ use App\Services\Games\BillingGate;
 use App\Services\Games\RuntimeBootstrap;
 use App\Services\Games\SessionService;
 use App\Services\Games\UnavailableSessionDependencies;
+use App\Services\Runtime\BarrierEvaluator;
 use App\Services\Runtime\RuntimeEngine;
 use App\Services\Runtime\RuntimeHandlers;
 use App\Services\Runtime\RuntimeInitializer;
+use App\Services\Runtime\RuntimeRoles;
 use App\Services\Runtime\RuntimeTimers;
 use App\Services\Runtime\ScoreAction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -112,7 +114,7 @@ class RuntimeEngineTest extends TestCase
         [, , , $player, $node] = $this->runtimeFixture();
         $this->runtimeAction($player, $node, 'start_node');
         $before = RuntimeEvent::count();
-        $this->app->bind(RuntimeHandlers::class, fn () => new class(app(RuntimeTimers::class)) extends RuntimeHandlers
+        $this->app->bind(RuntimeHandlers::class, fn () => new class(app(RuntimeTimers::class), app(BarrierEvaluator::class), app(RuntimeRoles::class)) extends RuntimeHandlers
         {
             public function submit(TeamNodeInstance $node, ?GameSessionPlayer $player, array $input, string $commandId): array
             {

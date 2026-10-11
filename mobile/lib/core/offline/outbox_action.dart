@@ -1,3 +1,5 @@
+import 'offline_identity.dart';
+
 class OutboxAction {
   const OutboxAction({
     required this.clientActionId,
@@ -6,6 +8,10 @@ class OutboxAction {
     required this.payload,
     required this.sequence,
     required this.createdAt,
+    this.ownerUserId,
+    this.ownerDeviceUuid,
+    this.playerId,
+    this.expiresAt,
     this.teamId,
     this.nodeInstanceId,
     this.retryCount = 0,
@@ -18,13 +24,19 @@ class OutboxAction {
         clientActionId: map['client_action_id']! as String,
         actionType: map['action_type']! as String,
         sessionId: map['session_id']! as String,
+        ownerUserId: map['owner_user_id'] as String?,
+        ownerDeviceUuid: map['owner_device_uuid'] as String?,
+        playerId: map['player_id'] as String?,
+        expiresAt: DateTime.tryParse(map['expires_at'] as String? ?? ''),
         teamId: map['team_id'] as String?,
         nodeInstanceId: map['node_instance_id'] as String?,
         payload: Map<String, dynamic>.from(map['payload'] as Map),
         sequence: map['sequence']! as int,
         createdAt: DateTime.parse(map['created_at']! as String),
         retryCount: map['retry_count']! as int,
-        nextRetryAt: map['next_retry_at'] == null ? null : DateTime.parse(map['next_retry_at']! as String),
+        nextRetryAt: map['next_retry_at'] == null
+            ? null
+            : DateTime.parse(map['next_retry_at']! as String),
         status: map['status']! as String,
         lastError: map['last_error'] as String?,
       );
@@ -32,7 +44,22 @@ class OutboxAction {
   final String clientActionId;
   final String actionType;
   final String sessionId;
+  final String? ownerUserId;
+  final String? ownerDeviceUuid;
+  final String? playerId;
+  final DateTime? expiresAt;
   final String? teamId;
+
+  bool belongsTo(OfflineOwner? owner) =>
+      owner != null &&
+      ownerUserId == owner.userId &&
+      ownerDeviceUuid == owner.deviceUuid;
+
+  bool matchesContext(OfflineContext context) =>
+      belongsTo(context.owner) &&
+      sessionId == context.sessionId &&
+      teamId == context.teamId &&
+      playerId == context.playerId;
   final String? nodeInstanceId;
   final Map<String, dynamic> payload;
   final int sequence;
@@ -46,6 +73,10 @@ class OutboxAction {
         'client_action_id': clientActionId,
         'action_type': actionType,
         'session_id': sessionId,
+        'owner_user_id': ownerUserId,
+        'owner_device_uuid': ownerDeviceUuid,
+        'player_id': playerId,
+        'expires_at': expiresAt?.toUtc().toIso8601String(),
         'team_id': teamId,
         'node_instance_id': nodeInstanceId,
         'payload': payload,
@@ -62,10 +93,15 @@ class OutboxAction {
     DateTime? nextRetryAt,
     String? status,
     String? lastError,
-  }) => OutboxAction(
+  }) =>
+      OutboxAction(
         clientActionId: clientActionId,
         actionType: actionType,
         sessionId: sessionId,
+        ownerUserId: ownerUserId,
+        ownerDeviceUuid: ownerDeviceUuid,
+        playerId: playerId,
+        expiresAt: expiresAt,
         teamId: teamId,
         nodeInstanceId: nodeInstanceId,
         payload: payload,

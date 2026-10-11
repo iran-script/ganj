@@ -45,3 +45,15 @@ The client exposes `ONLINE`, `RECONNECTING`, `OFFLINE`, `SYNCING`, `ACTION_PENDI
 6. Server-state reconciliation and the complete Phase 0–2.5 regression suite.
 
 No Phase 3.0 work is included.
+
+## Final home verification — 2026-10-11
+
+Status: **COMPLETE — PHYSICAL PILOT SMOKE PENDING**. The office checklist above is historical.
+
+Canonical backend: 555 passed, 0 failures, 0 errors, 0 skipped; 9,108 assertions. Flutter: 31 passed; clean, pub get, format, analyze and debug APK build passed. Automated tests cover account/device/session/team/player cache isolation, logout isolation, replay stop conditions, action expiry, stale Node rejection and stable action IDs. SQLite ownership migration and sequence allocation were reviewed; the available cache/replay tests use in-memory fakes rather than a native SQLite process restart.
+
+**PHYSICAL SMOKE PENDING:** real app kill/restart SQLite persistence, offline GPS and delayed puzzle replay after reconnect, physical QR online-only behavior, server-state reconciliation, and device/account switching in the pilot. No native integration_test infrastructure is present. No physical smoke completion is claimed.
+
+The historical PostgreSQL log records a backend process terminated by signal 13 (Broken pipe) followed by recovery. Its initiating cause is unknown. Current PostgreSQL remained healthy through the complete suite: **NOT REPRODUCED DURING FINAL VERIFICATION**. Logs and JUnit/XML evidence remain local and ignored.
+
+Outbox publication ends at the internal Redis Stream; no downstream consumer is implemented. Redis Stream deduplication was verified, not end-to-end downstream consumption. Generated iOS files, local databases, credentials, signing material, build/APK output and machine-local Gradle init configuration are excluded from the repair commit. No Phase 3.0 work is included.

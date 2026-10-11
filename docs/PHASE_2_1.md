@@ -25,3 +25,11 @@ Office verification intentionally excludes Docker and PostgreSQL because the loc
 - `/api/v1/ready`
 - `/api/v1/health`
 - queue smoke
+
+## Final home verification — 2026-10-11
+
+Status: **COMPLETE — PHYSICAL PILOT SMOKE PENDING**. The office checklist above is historical.
+
+Canonical Docker/PostgreSQL full suite: 555 passed, 0 failures, 0 errors, 0 skipped; 9,108 assertions. All 16 migrations passed on urban_ar_test; QR, scoring/hint and Live Challenge rollback/reapply passed. QrBehaviorTest passed 17 cases, QR contract/security passed 7, and all four PostgreSQL QR contention cases passed (duplicate scan, token consumption, completion versus scan, revoke versus scan). These are lock-contention regressions, not a throughput benchmark.
+
+Composer strict validation, Pint, changed-PHP lint and whitespace checks passed. Docker build and canonical services passed. Physical camera/GPS, role-gated scanning and outdoor pilot checks remain pending.

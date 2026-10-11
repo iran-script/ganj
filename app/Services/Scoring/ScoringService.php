@@ -9,6 +9,7 @@ use App\Models\TeamNodeInstance;
 use App\Models\TeamScenarioInstance;
 use App\Models\TeamScore;
 use App\Services\Runtime\ScoreAction;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class ScoringService implements ScoreAction
@@ -59,63 +60,71 @@ class ScoringService implements ScoreAction
         if (! in_array($source, self::SOURCES, true)) {
             throw new ApiException('ACTION_NOT_ALLOWED', 'The score source is not permitted.', [], 422);
         }
-        $team = $instance->registration;
-        $event = ScoreEvent::where('idempotency_key', $idempotencyKey)->first();
-        if ($event) {
-            return $event;
-        }
-        $score = TeamScore::where(['game_session_id' => $instance->session->id, 'team_id' => $team->id])->first();
-        if (! $score) {
-            $score = new TeamScore;
-            $score->forceFill(['game_session_id' => $instance->session->id, 'team_id' => $team->id, 'score' => 0, 'effective_elapsed_seconds' => 0, 'hints_used' => 0, 'updated_at' => now()])->save();
-        }
-        $score = TeamScore::whereKey($score->id)->lockForUpdate()->firstOrFail();
-        if ($score->finalized && $source !== 'MANUAL_ADJUSTMENT') {
-            throw new ApiException('STATE_TRANSITION_INVALID', 'Finished scores cannot be changed by gameplay.', [], 409);
-        }
-        $event = new ScoreEvent;
-        $event->forceFill(['event_id' => (string) Str::uuid(), 'game_session_id' => $instance->session->id, 'team_id' => $team->id,
-            'player_id' => $player?->id, 'node_instance_id' => $node?->id, 'source_type' => $source, 'source_id' => $node?->public_id,
-            'delta' => $delta, 'reason_code' => $reason, 'metadata' => $metadata, 'idempotency_key' => $idempotencyKey,
-            'occurred_at' => now(), 'created_at' => now()])->save();
-        $score->forceFill(['score' => $score->score + $delta, 'updated_at' => now()])->save();
-        $payload = ['session_id' => $instance->session->public_id, 'team_id' => $team->team->public_id, 'previous_score' => $score->score - $delta,
-            'delta' => $delta, 'new_score' => $score->score, 'source_type' => $source, 'source_id' => $node?->public_id,
-            'effective_elapsed_seconds' => $score->effective_elapsed_seconds, 'hints_used' => $score->hints_used];
-        $this->events->record('score.event_recorded.v1', $payload, $team->team->public_id, $actorId, $instance->session->organization_id, $auditReason);
-        $this->events->record('score.team_changed.v1', $payload, $team->team->public_id, $actorId, $instance->session->organization_id, $auditReason);
-        $this->events->record('leaderboard.changed.v1', ['session_id' => $instance->session->public_id, 'team_id' => $team->team->public_id,
-            'score' => $score->score, 'effective_elapsed_seconds' => $score->effective_elapsed_seconds, 'hints_used' => $score->hints_used], $team->team->public_id, $actorId, $instance->session->organization_id, $auditReason);
 
-        return $event;
+        return DB::transaction(function () use ($instance, $player, $node, $delta, $source, $reason, $idempotencyKey, $metadata, $actorId, $auditReason): ScoreEvent {
+            $team = $instance->registration;
+            $score = $this->scoreFor($instance->game_session_id, $team->id);
+            $event = ScoreEvent::where('idempotency_key', $idempotencyKey)->first();
+            if ($event) {
+                if ($event->game_session_id !== $instance->game_session_id || $event->team_id !== $team->id
+                    || $event->delta !== $delta || $event->source_type !== $source || $event->node_instance_id !== $node?->id
+                    || $event->player_id !== $player?->id || $event->reason_code !== $reason) {
+                    throw new ApiException('IDEMPOTENCY_CONFLICT', 'The score key belongs to a different mutation.', [], 409);
+                }
+
+                return $event;
+            }
+            if ($score->finalized && $source !== 'MANUAL_ADJUSTMENT') {
+                throw new ApiException('STATE_TRANSITION_INVALID', 'Finished scores cannot be changed by gameplay.', [], 409);
+            }
+            $event = new ScoreEvent;
+            $event->forceFill(['event_id' => (string) Str::uuid(), 'game_session_id' => $instance->session->id, 'team_id' => $team->id,
+                'player_id' => $player?->id, 'node_instance_id' => $node?->id, 'source_type' => $source, 'source_id' => $node?->public_id,
+                'delta' => $delta, 'reason_code' => $reason, 'metadata' => $metadata, 'idempotency_key' => $idempotencyKey,
+                'occurred_at' => now(), 'created_at' => now()])->save();
+            $score->forceFill(['score' => $score->score + $delta, 'updated_at' => now()])->save();
+            $payload = ['session_id' => $instance->session->public_id, 'team_id' => $team->team->public_id, 'previous_score' => $score->score - $delta,
+                'delta' => $delta, 'new_score' => $score->score, 'source_type' => $source, 'source_id' => $node?->public_id,
+                'effective_elapsed_seconds' => $score->effective_elapsed_seconds, 'hints_used' => $score->hints_used];
+            $this->events->record('score.event_recorded.v1', $payload, $team->team->public_id, $actorId, $instance->session->organization_id, $auditReason);
+            $this->events->record('score.team_changed.v1', $payload, $team->team->public_id, $actorId, $instance->session->organization_id, $auditReason);
+            $this->events->record('leaderboard.changed.v1', ['session_id' => $instance->session->public_id, 'team_id' => $team->team->public_id,
+                'score' => $score->score, 'effective_elapsed_seconds' => $score->effective_elapsed_seconds, 'hints_used' => $score->hints_used], $team->team->public_id, $actorId, $instance->session->organization_id, $auditReason);
+
+            return $event;
+        });
     }
 
     public function finalize(TeamScenarioInstance $instance): TeamScore
     {
-        $score = $this->scoreFor($instance->session->id, $instance->registration->id);
-        $score->forceFill(['effective_elapsed_seconds' => $instance->effective_elapsed_seconds, 'finished_at' => now(), 'finalized' => true, 'updated_at' => now()])->save();
-        $this->events->record('score.finalized.v1', ['session_id' => $instance->session->public_id, 'team_id' => $instance->registration->team->public_id, 'score' => $score->score], $instance->registration->team->public_id, null, $instance->session->organization_id);
+        return DB::transaction(function () use ($instance): TeamScore {
+            $score = $this->scoreFor($instance->game_session_id, $instance->game_session_team_id);
+            if ($score->finalized) {
+                return $score;
+            }
+            $score->forceFill(['effective_elapsed_seconds' => $instance->effective_elapsed_seconds, 'finished_at' => now(), 'finalized' => true, 'updated_at' => now()])->save();
+            $this->events->record('score.finalized.v1', ['session_id' => $instance->session->public_id, 'team_id' => $instance->registration->team->public_id, 'score' => $score->score], $instance->registration->team->public_id, null, $instance->session->organization_id);
 
-        return $score;
+            return $score;
+        });
     }
 
     public function rebuild(int $sessionId, int $teamId): TeamScore
     {
-        $sum = (int) ScoreEvent::where('game_session_id', $sessionId)->where('team_id', $teamId)->sum('delta');
-        $score = TeamScore::where(['game_session_id' => $sessionId, 'team_id' => $teamId])->lockForUpdate()->firstOrFail();
-        $score->forceFill(['score' => $sum, 'updated_at' => now()])->save();
+        return DB::transaction(function () use ($sessionId, $teamId): TeamScore {
+            $score = $this->scoreFor($sessionId, $teamId);
+            $sum = (int) ScoreEvent::where('game_session_id', $sessionId)->where('team_id', $teamId)->sum('delta');
+            $score->forceFill(['score' => $sum, 'updated_at' => now()])->save();
 
-        return $score;
+            return $score;
+        });
     }
 
+    /** Call within the transaction that mutates the score projection. */
     public function scoreFor(int $sessionId, int $teamId): TeamScore
     {
-        $score = TeamScore::where(['game_session_id' => $sessionId, 'team_id' => $teamId])->first();
-        if (! $score) {
-            $score = new TeamScore;
-            $score->forceFill(['game_session_id' => $sessionId, 'team_id' => $teamId, 'score' => 0, 'effective_elapsed_seconds' => 0, 'hints_used' => 0, 'updated_at' => now()])->save();
-        }
+        TeamScore::query()->insertOrIgnore(['game_session_id' => $sessionId, 'team_id' => $teamId, 'score' => 0, 'effective_elapsed_seconds' => 0, 'hints_used' => 0, 'updated_at' => now()]);
 
-        return TeamScore::whereKey($score->id)->lockForUpdate()->firstOrFail();
+        return TeamScore::where(['game_session_id' => $sessionId, 'team_id' => $teamId])->lockForUpdate()->sole();
     }
 }

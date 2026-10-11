@@ -3,6 +3,7 @@
 namespace App\Services\Scenarios;
 
 use App\Models\Checkpoint;
+use App\Models\QrTrigger;
 use App\Models\ScenarioSubflow;
 use App\Models\ScenarioSubflowVersion;
 use Illuminate\Database\Eloquent\Builder;
@@ -122,6 +123,13 @@ class GraphValidator
                 foreach ($this->registry->definitions()[$node['node_type']]['capabilities'] ?? [] as $capability) {
                     if ($capability === 'checkpoint') {
                         if (! Checkpoint::where('public_id', $node['config']['checkpoint_id'] ?? null)->where('organization_id', $organizationId)->where('status', 'ACTIVE')->exists()) {
+                            $add('DEPENDENCY_NOT_READY', "nodes.$i.config");
+                        }
+                    } elseif ($capability === 'qr') {
+                        if (! QrTrigger::where('public_id', $node['config']['trigger_id'] ?? null)->where('organization_id', $organizationId)->where('status', 'ACTIVE')->exists()) {
+                            $add('DEPENDENCY_NOT_READY', "nodes.$i.config");
+                        }
+                        if (isset($node['config']['checkpoint_id']) && ! Checkpoint::where('public_id', $node['config']['checkpoint_id'])->where('organization_id', $organizationId)->where('status', 'ACTIVE')->exists()) {
                             $add('DEPENDENCY_NOT_READY', "nodes.$i.config");
                         }
                     } elseif ($capability !== 'subflow') {

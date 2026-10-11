@@ -6,3 +6,15 @@ storage/logs
 storage/framework
 tests
 docs/specs
+
+.env.*
+mobile
+storage
+.codex
+.cursor
+.agents
+*.key
+*.pem
+*.p12
+*.jks
+*.keystore

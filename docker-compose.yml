@@ -7,6 +7,7 @@ services:
       redis: { condition: service_healthy }
     command: sh -c "php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=8000"
   worker:
+    restart: unless-stopped
     build: .
     env_file: .env
     depends_on:
@@ -14,6 +15,7 @@ services:
       redis: { condition: service_healthy }
     command: php artisan queue:work redis --sleep=1 --tries=3 --backoff=5
   scheduler:
+    restart: unless-stopped
     build: .
     env_file: .env
     depends_on:
@@ -35,6 +37,7 @@ services:
     healthcheck: { test: ["CMD-SHELL", "pg_isready -U urban_ar -d urban_ar"], interval: 5s, timeout: 5s, retries: 10 }
   redis:
     image: redis:7-alpine
+    command: redis-server --appendonly yes --appendfsync always --maxmemory-policy noeviction
     volumes: [redis_data:/data]
     healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 5s, timeout: 3s, retries: 10 }
 volumes:

@@ -32,3 +32,11 @@ Migration `2026_10_10_000003_create_live_challenge_tables.php` adds canonical `c
 4. Docker build, `/live`, `/ready`, `/health`, queue and realtime smoke.
 5. GameMaster control-room and end-to-end Live Challenge smoke.
 6. Full Phase 0–2.4 regression suite.
+
+## Final home verification — 2026-10-11
+
+Status: **COMPLETE** for the implemented backend phase. The office checklist above is historical.
+
+Canonical full suite: 555 passed / 9,108 assertions; zero failures, errors or skips. Live Challenge behavioral cases (4), GameMaster contracts (2), and duplicate/cancel/expiry contention (3) passed, including authorization/tenant boundaries, durable expiry and exactly-once reward. Live Challenge migration fresh and rollback/reapply passed on urban_ar_test.
+
+Outbox durability/publication was exercised with scheduler and worker stopped, a committed synthetic event in a separate verification database, and a fresh dispatcher process. The pending row survived producer exit and was published. Simulating acknowledgement loss and reprocessing retained the same Redis Stream ID and unchanged entry count. Scheduler and worker were restarted. The two outbox retry/backoff/deduplication tests also passed. This implementation publishes to an internal Redis Stream; no downstream Stream consumer exists in this repository, so downstream consumption or player realtime delivery is not claimed.
