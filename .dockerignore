@@ -18,3 +18,8 @@ storage
 *.p12
 *.jks
 *.keystore
+
+bootstrap/cache/*.php
+public/hot
+public/build
+public/fonts-manifest.dev.json
