@@ -89,6 +89,7 @@ void main() {
     api.deviceBound = true;
     await sync.sync();
     expect(api.posts, ['one', 'two']);
+    expect(sync.status.userMessage, 'همگام‌سازی انجام شد');
     expect(outbox.records.every((a) => a.status == 'ACKNOWLEDGED'), isTrue);
   });
 
@@ -106,6 +107,7 @@ void main() {
     await sync.sync();
     expect(api.posts, isEmpty);
     expect(outbox.records.single.lastError, 'EXPIRED_ACTION');
+    expect(sync.status.userMessage, contains('منقضی یا رد'));
   });
 
   test('puzzle expires when node is no longer active', () async {
@@ -137,6 +139,7 @@ void main() {
     outbox.records.addAll([action('one'), action('two', sequence: 2)]);
     await sync.sync();
     expect(api.posts, ['one', 'two']);
+    expect(sync.status.userMessage, 'همگام‌سازی انجام شد');
     expect(outbox.records.every((a) => a.status == 'ACKNOWLEDGED'), isTrue);
   });
 

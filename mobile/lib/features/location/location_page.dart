@@ -45,8 +45,9 @@ class _LocationPageState extends State<LocationPage> {
             code: 'LOCATION_INVALID', message: 'Location permission denied.');
       }
       final position = await Geolocator.getCurrentPosition(
-          locationSettings:
-              const LocationSettings(accuracy: LocationAccuracy.high));
+          locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.high,
+              timeLimit: Duration(seconds: 25)));
       if (owner == null || generation != OfflineIdentity.instance.generation) {
         throw const ApiError(
             code: 'AUTHENTICATION_REQUIRED', message: 'Identity changed.');
@@ -57,7 +58,7 @@ class _LocationPageState extends State<LocationPage> {
         'lat': position.latitude,
         'lng': position.longitude,
         'accuracy': position.accuracy,
-        'client_timestamp': DateTime.now().toUtc().toIso8601String(),
+        'client_timestamp': position.timestamp.toUtc().toIso8601String(),
         'sequence': DateTime.now().microsecondsSinceEpoch
       };
       try {
@@ -72,14 +73,13 @@ class _LocationPageState extends State<LocationPage> {
             !ApiClient.isNetworkFailure(error)) {
           rethrow;
         }
-        final action = await outbox.enqueue(
+        await outbox.enqueue(
             clientActionId: key,
             actionType: 'gps_sample',
             sessionId: widget.sessionId,
             payload: sample);
         if (mounted) {
-          setState(() => message =
-              'موقعیت برای همگام‌سازی ذخیره شد (${action.clientActionId.substring(0, 8)}).');
+          setState(() => message = 'اقدام ذخیره شد و پس از اتصال ارسال می‌شود');
         }
         return;
       }

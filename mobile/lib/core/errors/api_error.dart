@@ -20,6 +20,11 @@ class ApiError implements Exception {
         'QR_REPLAYED' => 'این کد قبلاً استفاده شده است.',
         'QR_OUTSIDE_ALLOWED_AREA' =>
           'برای استفاده از این کد باید در محدوده مجاز باشید.',
+        'LOCATION_INVALID' =>
+          'موقعیت در دسترس نیست. دسترسی و GPS را بررسی کنید.',
+        'LOCATION_STALE' => 'موقعیت قدیمی است. دوباره مکان‌یابی کنید.',
+        'ANSWER_REJECTED' => 'پاسخ تأیید نشد. دوباره بررسی کنید.',
+        'NETWORK_UNAVAILABLE' => 'ارتباط با سرور برقرار نشد.',
         'LOCATION_ACCURACY_TOO_LOW' => 'دقت مکان‌یابی کافی نیست.',
         'NODE_NOT_ACTIVE' => 'این مرحله دیگر فعال نیست.',
         'RATE_LIMITED' => 'تعداد تلاش‌ها زیاد است؛ کمی بعد دوباره امتحان کنید.',
@@ -28,7 +33,7 @@ class ApiError implements Exception {
         'IDEMPOTENCY_CONFLICT' => 'درخواست تکراری با داده متفاوت است.',
         'STATE_TRANSITION_INVALID' => 'این عملیات در وضعیت فعلی ممکن نیست.',
         'ACTION_NOT_ALLOWED' => 'این عملیات برای شما مجاز نیست.',
-        _ => message.isEmpty ? 'خطایی رخ داد. دوباره تلاش کنید.' : message,
+        _ => 'خطایی رخ داد. دوباره تلاش کنید.',
       };
 
   @override

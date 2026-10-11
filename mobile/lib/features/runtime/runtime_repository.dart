@@ -29,7 +29,9 @@ class RuntimeRepository {
     } catch (error) {
       if (generation != OfflineIdentity.instance.generation) rethrow;
       final cached = await _cache.runtime(sessionId);
-      if (cached != null && ApiClient.isNetworkFailure(error)) return cached;
+      if (cached != null && ApiClient.isNetworkFailure(error)) {
+        return {...cached, '_cached': true};
+      }
       rethrow;
     }
   }

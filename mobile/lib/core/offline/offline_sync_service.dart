@@ -215,6 +215,17 @@ class OfflineSyncService {
           return;
         }
       }
+      if (actions.isNotEmpty) {
+        final results = await _outbox.all();
+        final changed = results.where((item) => actions
+            .any((original) => original.clientActionId == item.clientActionId));
+        if (changed.any((item) => item.status == 'FAILED_TERMINAL')) {
+          status.outcome =
+              'برخی اقدام‌ها منقضی یا رد شدند و قابل ارسال نیستند.';
+        } else if (changed.every((item) => item.status == 'ACKNOWLEDGED')) {
+          status.outcome = 'همگام‌سازی انجام شد';
+        }
+      }
       await _outbox.prune();
       final pending = (await _outbox.all())
           .where((a) => !['ACKNOWLEDGED', 'FAILED_TERMINAL'].contains(a.status))

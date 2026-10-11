@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
+import 'nexo_theme.dart';
 import '../core/api/api_client.dart';
 import '../core/auth/auth_controller.dart';
 import '../features/auth/login_page.dart';
@@ -38,8 +39,7 @@ class _NexoAppState extends State<NexoApp> {
       builder: (context, _) => MaterialApp(
         title: 'NEXO',
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-            colorSchemeSeed: const Color(0xff3155d8), useMaterial3: true),
+        theme: NexoTheme.data,
         locale: const Locale('fa'),
         supportedLocales: const [Locale('fa'), Locale('en')],
         localizationsDelegates: const [

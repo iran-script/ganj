@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/errors/api_error.dart';
 import '../location/location_page.dart';
 import '../qr/qr_scanner_page.dart';
 
@@ -18,9 +19,23 @@ class NodeRenderer extends StatelessWidget {
   Map<String, dynamic> get config =>
       (node['config'] as Map<String, dynamic>?) ?? {};
 
+  Future<void> submitSafely(
+      BuildContext context, Map<String, dynamic> value) async {
+    try {
+      await onSubmit(value);
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(error is ApiError
+                ? error.userMessage
+                : 'ارسال انجام نشد. دوباره تلاش کنید.')));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (type.contains('AR')) {
+    if (type == 'AR' || type.startsWith('AR ')) {
       return const _UnavailableCard(title: 'قابلیت AR در این نسخه فعال نیست.');
     }
     if (type == 'QR') {
@@ -51,20 +66,22 @@ class NodeRenderer extends StatelessWidget {
         type.contains('TEXT ANSWER') ||
         type == 'PASSWORD') {
       return _AnswerCard(
-          onSubmit: onSubmit,
+          onSubmit: (value) => submitSafely(context, value),
           prompt: config['prompt'] as String? ?? 'پاسخ را وارد کنید.');
     }
     if (type == 'TEAM TOGETHER' || type == 'BARRIER') {
-      return _ProgressCard(node: node, onSubmit: onSubmit);
+      return _ProgressCard(
+          node: node, onSubmit: (value) => submitSafely(context, value));
     }
     if (type == 'MESSAGE' || type == 'SHOW MESSAGE') {
       return _AcknowledgeCard(
           text: config['text'] as String? ?? config['prompt'] as String? ?? '',
-          onSubmit: onSubmit);
+          onSubmit: (value) => submitSafely(context, value));
     }
     if (type == 'FINISH') {
       return _AcknowledgeCard(
-          text: 'بازی به پایان رسیده است.', onSubmit: onSubmit);
+          text: 'به مرحله پایانی رسیدید. پایان بازی را تأیید کنید.',
+          onSubmit: (value) => submitSafely(context, value));
     }
     if (type == 'WAIT') {
       return const _UnavailableCard(
