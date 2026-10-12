@@ -25,7 +25,7 @@ jobs:
       DB_PORT: 5432
       DB_DATABASE: urban_ar_test
       DB_USERNAME: urban_ar
-      DB_PASSWORD: nexo-ci-test-password
+      DB_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}-db
       CACHE_STORE: array
       QUEUE_CONNECTION: sync
       SESSION_DRIVER: array
@@ -38,7 +38,7 @@ jobs:
         env:
           POSTGRES_DB: urban_ar_test
           POSTGRES_USER: urban_ar
-          POSTGRES_PASSWORD: nexo-ci-test-password
+          POSTGRES_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}-db
         ports:
           - 5432:5432
         options: >-
