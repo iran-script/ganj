@@ -45,9 +45,11 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
 }
 
+type RequestOptions = { headers?: HeadersInit };
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
-  post: <T>(path: string, body?: unknown) => request<T>(path, { method: 'POST', body: body ? JSON.stringify(body) : undefined }),
+  post: <T>(path: string, body?: unknown, options: RequestOptions = {}) => request<T>(path, { method: 'POST', body: body ? JSON.stringify(body) : undefined, headers: options.headers }),
   patch: <T>(path: string, body: unknown) => request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),
 };
 

@@ -1,0 +1,29 @@
+'use client';
+
+import Link from 'next/link';
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { z } from 'zod';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { api } from '@/lib/api-client';
+import { normalizeApiError } from '@/lib/api-error';
+import { queries } from '@/lib/queries';
+import { Button, DataTable, EmptyState, ErrorState, LoadingState, PageHeader, StatusBadge } from '@/components/ui';
+import type { GameSession } from '@/types/api';
+
+const sessionSchema = z.object({ game_id: z.string().uuid('بازی را انتخاب کنید.'), timezone: z.string().min(1, 'منطقه زمانی الزامی است.'), registration_opens_at: z.string().optional(), registration_closes_at: z.string().optional(), scheduled_start_at: z.string().optional() });
+type SessionForm = z.infer<typeof sessionSchema>;
+
+function CreateSessionForm({ onDone }: { onDone: () => void }) {
+  const client = useQueryClient(); const games = useQuery(queries.games()); const [error, setError] = useState('');
+  const form = useForm<SessionForm>({ resolver: zodResolver(sessionSchema), defaultValues: { timezone: 'Asia/Tehran' } });
+  const mutation = useMutation({ mutationFn: (values: SessionForm) => api.post<GameSession>('/game-sessions', Object.fromEntries(Object.entries(values).filter(([, value]) => value))), onSuccess: async () => { await client.invalidateQueries({ queryKey: ['sessions'] }); onDone(); }, onError: (reason) => setError(normalizeApiError(reason).message) });
+  if (games.isPending) return <LoadingState label="در حال دریافت فهرست بازی‌ها..." />;
+  if (games.isError) return <ErrorState message="فهرست بازی‌ها دریافت نشد." />;
+  return <form onSubmit={form.handleSubmit((values) => { setError(''); mutation.mutate(values); })} className="space-y-4"><div><label className="mb-2 block text-sm" htmlFor="game_id">بازی</label><select id="game_id" {...form.register('game_id')} className="h-11 w-full rounded-lg border border-[var(--nexo-border)] bg-[#0c1219] px-3 text-sm"><option value="">انتخاب بازی فعال</option>{games.data.filter((game) => game.status === 'ACTIVE').map((game) => <option key={game.id} value={game.id}>{game.title ?? game.name}</option>)}</select>{form.formState.errors.game_id && <p className="mt-1 text-xs text-[var(--nexo-danger)]">{form.formState.errors.game_id.message}</p>}</div><div><label className="mb-2 block text-sm" htmlFor="timezone">منطقه زمانی</label><input id="timezone" {...form.register('timezone')} className="h-11 w-full rounded-lg border border-[var(--nexo-border)] bg-[#0c1219] px-3 text-sm" /></div><div className="grid gap-3 sm:grid-cols-2"><label className="text-sm">شروع ثبت‌نام<input type="datetime-local" {...form.register('registration_opens_at')} className="mt-2 h-11 w-full rounded-lg border border-[var(--nexo-border)] bg-[#0c1219] px-3 text-sm" /></label><label className="text-sm">پایان ثبت‌نام<input type="datetime-local" {...form.register('registration_closes_at')} className="mt-2 h-11 w-full rounded-lg border border-[var(--nexo-border)] bg-[#0c1219] px-3 text-sm" /></label></div><label className="block text-sm">شروع برنامه‌ریزی‌شده<input type="datetime-local" {...form.register('scheduled_start_at')} className="mt-2 h-11 w-full rounded-lg border border-[var(--nexo-border)] bg-[#0c1219] px-3 text-sm" /></label>{error && <div role="alert" className="rounded-lg border border-[var(--nexo-danger)]/30 bg-[var(--nexo-danger)]/10 p-3 text-sm text-[var(--nexo-danger)]">{error}</div>}<Button type="submit">{mutation.isPending ? 'در حال ایجاد...' : 'ایجاد جلسه'}</Button></form>;
+}
+
+function SessionRow({ session }: { session: GameSession }) { return <tr><td className="px-5 py-4"><Link className="font-medium hover:text-[var(--nexo-amber)]" href={`/control/sessions/${session.id}`}>{session.title ?? session.game?.title ?? session.game?.name ?? `جلسه بازی ${session.game_id ?? 'نامشخص'}`}</Link><div className="mt-1 text-xs text-[var(--nexo-muted)]">بازی: {session.game_id ?? '—'} · {session.id}</div></td><td className="px-5 py-4"><StatusBadge status={session.status} /></td><td className="px-5 py-4 text-[var(--nexo-muted)]">{session.teams_count ?? session.team_count ?? session.teams?.length ?? '—'}</td><td className="px-5 py-4 text-xs text-[var(--nexo-muted)]">{session.scheduled_start_at ? new Date(session.scheduled_start_at).toLocaleString('fa-IR') : 'ثبت نشده'}</td><td className="px-5 py-4"><Link className="text-xs text-[var(--nexo-amber)]" href={`/control/live/${session.id}`}>کنترل زنده ←</Link></td></tr>; }
+
+export function SessionManagement() { const [createOpen, setCreateOpen] = useState(false); const q = useQuery(queries.sessions()); if (q.isPending) return <LoadingState />; if (q.isError) return <ErrorState onRetry={() => void q.refetch()} />; return <><PageHeader eyebrow="SESSIONS" title="جلسه‌ها" description="چرخه عمر و وضعیت عملیاتی جلسه‌های بازی" actions={<Button onClick={() => setCreateOpen(true)}>ایجاد جلسه</Button>} />{q.data.length === 0 ? <EmptyState title="جلسه‌ای وجود ندارد" description="جلسه‌های ایجادشده از API سازمان در اینجا نمایش داده می‌شوند." action={<Button onClick={() => setCreateOpen(true)}>ایجاد اولین جلسه</Button>} /> : <DataTable headers={['جلسه / بازی', 'وضعیت', 'تیم‌ها', 'شروع', 'عملیات']}>{q.data.map((session) => <SessionRow key={session.id} session={session} />)}</DataTable>}{createOpen && <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-5"><div className="w-full max-w-xl rounded-2xl border border-[var(--nexo-border)] bg-[var(--nexo-surface)] p-6"><div className="mb-5 flex items-center justify-between"><h2 className="text-lg font-bold">ایجاد جلسه جدید</h2><button aria-label="بستن" onClick={() => setCreateOpen(false)} className="text-[var(--nexo-muted)]">×</button></div><CreateSessionForm onDone={() => setCreateOpen(false)} /></div></div>}</>; }
