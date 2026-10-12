@@ -117,7 +117,15 @@ jobs:
         run: php artisan migrate:fresh --force --no-interaction
 
       - name: Run full backend suite
-        run: php artisan test --compact --process-isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t test_files < <(find tests -type f -name '*Test.php' | sort)
+          for test_file in "${test_files[@]}"; do
+            echo "=== Running ${test_file} ==="
+            php artisan migrate:fresh --force --no-interaction
+            php artisan test --compact "$test_file"
+          done
 
   control-center:
     name: Control Center
