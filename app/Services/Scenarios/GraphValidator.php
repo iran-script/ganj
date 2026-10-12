@@ -120,6 +120,12 @@ class GraphValidator
             }
             $this->templates($node['config'], array_merge(array_keys($builtins), array_map(fn (string $key): string => 'variables.'.$key, array_keys($variables))), "nodes.$i.config", $add);
             if ($semantic) {
+                if ($node['node_type'] === 'GPS / Location'
+                    && isset($node['config']['checkpoint_id'])
+                    && ! isset($node['config']['latitude'], $node['config']['longitude'], $node['config']['radius_m'])
+                    && ! Checkpoint::where('public_id', $node['config']['checkpoint_id'])->where('organization_id', $organizationId)->where('status', 'ACTIVE')->exists()) {
+                    $add('DEPENDENCY_NOT_READY', "nodes.$i.config");
+                }
                 foreach ($this->registry->definitions()[$node['node_type']]['capabilities'] ?? [] as $capability) {
                     if ($capability === 'checkpoint') {
                         if (! Checkpoint::where('public_id', $node['config']['checkpoint_id'] ?? null)->where('organization_id', $organizationId)->where('status', 'ACTIVE')->exists()) {
