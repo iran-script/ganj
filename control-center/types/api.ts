@@ -62,9 +62,10 @@ export type GameSession = {
   teams?: SessionTeam[];
 };
 
-export type Team = { id: string; name?: string; status?: string; member_count?: number };
+export type Team = { id: string; name?: string; status?: string; member_count?: number; readiness?: string; device_status?: string; session_id?: string | null; session?: { id?: string; title?: string } | null; runtime?: { current_node?: string | null; status?: string } | null; score?: { score?: number } | null; members?: SessionPlayer[]; players?: SessionPlayer[]; updated_at?: string | null };
 
 export type SessionPlayer = { id: string; name?: string; user?: { id: string; name: string }; status?: string; presence?: string | null; device_bound?: boolean; device_last_seen_at?: string | null };
+export type Device = { id: string; public_id?: string; name?: string; platform?: string; status?: string; last_seen_at?: string | null; user?: { id: string; name?: string } | null; readiness?: string };
 export type SessionTeam = Team & { team_id?: string; player_count?: number; players?: SessionPlayer[]; runtime?: Record<string, unknown> | null; score?: { score?: number; effective_elapsed_seconds?: number; hints_used?: number; finished_at?: string | null } | null };
 
 export type Health = { status: 'ok' | 'degraded'; checks?: Record<string, string> };
