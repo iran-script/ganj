@@ -1,0 +1,29 @@
+@import 'tailwindcss';
+
+:root {
+  --nexo-bg: #0b0f14;
+  --nexo-surface: #111821;
+  --nexo-elevated: #17212d;
+  --nexo-border: #243241;
+  --nexo-amber: #e6ad42;
+  --nexo-amber-soft: #3a2d19;
+  --nexo-success: #45c486;
+  --nexo-warning: #e3a64a;
+  --nexo-danger: #ef6b72;
+  --nexo-info: #5ea9df;
+  --nexo-text: #edf1f5;
+  --nexo-muted: #8a99aa;
+  --nexo-radius: 12px;
+  --nexo-shadow: 0 18px 50px rgb(0 0 0 / 22%);
+}
+
+* { box-sizing: border-box; }
+html { background: var(--nexo-bg); }
+body { margin: 0; background: var(--nexo-bg); color: var(--nexo-text); font-family: Tahoma, 'Segoe UI', Arial, sans-serif; }
+button, input { font: inherit; }
+button { cursor: pointer; }
+::selection { background: var(--nexo-amber); color: #17120b; }
+
+.nexo-grid { background-image: linear-gradient(rgb(255 255 255 / 2%) 1px, transparent 1px), linear-gradient(90deg, rgb(255 255 255 / 2%) 1px, transparent 1px); background-size: 32px 32px; }
+.scrollbar-thin::-webkit-scrollbar { width: 5px; height: 5px; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background: #344456; border-radius: 999px; }

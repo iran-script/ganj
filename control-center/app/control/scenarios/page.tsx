@@ -1,0 +1,2 @@
+import { Button, EmptyState, PageHeader } from '@/components/ui';
+export default function ScenariosPage() { return <><PageHeader eyebrow="SCENARIOS" title="سناریوها" description="مدیریت پیش‌نویس‌ها و نسخه‌های منتشرشده" actions={<Button>ایجاد سناریو</Button>} /><EmptyState title="Scenario Builder در گام بعدی فعال می‌شود" description="این صفحه جایگاه ماژول سناریو در مرکز کنترل را آماده کرده است؛ canvas و ویرایشگر React Flow هنوز پیاده‌سازی نشده‌اند." /></>; }
