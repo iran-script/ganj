@@ -1,4 +1,5 @@
 import type { ScenarioEdge, ScenarioNode, ScenarioNodeType } from '@/types/scenario';
+import { SCENARIO_NODE_LABELS } from '@/types/scenario';
 
 export function defaultScenarioConfig(type: ScenarioNodeType): Record<string, unknown> {
   if (type === 'Message') return { text: '' };
@@ -14,4 +15,20 @@ export function hasValidEdgeReferences(nodes: ScenarioNode[], edges: ScenarioEdg
 
 export function canPublish(validation?: { status?: string }, versionStatus = 'DRAFT'): boolean {
   return versionStatus === 'DRAFT' && validation?.status === 'PASS';
+}
+
+export function nodeSummary(node: ScenarioNode): string {
+  const config = node.config;
+  if (node.node_type === 'Message') {
+    return typeof config.text === 'string' && config.text.trim() ? config.text : 'پیام هنوز تنظیم نشده';
+  }
+  if (node.node_type === 'GPS / Location') {
+    const latitude = typeof config.latitude === 'number' || typeof config.latitude === 'string' ? config.latitude : null;
+    const longitude = typeof config.longitude === 'number' || typeof config.longitude === 'string' ? config.longitude : null;
+    const radius = typeof config.radius_m === 'number' || typeof config.radius_m === 'string' ? config.radius_m : null;
+    return latitude !== null && longitude !== null && radius !== null ? `${latitude}, ${longitude} • شعاع ${radius} متر` : 'نیازمند مختصات و شعاع';
+  }
+  if (node.node_type === 'QR') return config.trigger_id ? 'QR فعال' : 'نیازمند تنظیم QR';
+  if (node.node_type === 'Puzzle') return config.expected_answer ? `پاسخ متنی • ${config.max_attempts ?? 'بدون محدودیت'} تلاش` : 'معما هنوز تنظیم نشده';
+  return SCENARIO_NODE_LABELS[node.node_type];
 }
