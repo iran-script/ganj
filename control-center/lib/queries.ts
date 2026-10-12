@@ -13,4 +13,6 @@ export const queries = {
   timeline: (id: string) => ({ queryKey: ['sessions', id, 'timeline'], queryFn: () => api.get<TimelineEvent[]>(`/game-sessions/${id}/timeline`) }),
   organizations: () => ({ queryKey: ['organizations'], queryFn: () => api.get<Organization[]>('/organizations') }),
   scenarios: () => ({ queryKey: ['scenarios'], queryFn: () => import('@/lib/scenario-api').then(({ scenarioApi }) => scenarioApi.list()) }),
+  checkpoints: () => ({ queryKey: ['checkpoints'], queryFn: () => import('@/lib/resource-api').then(({ resourceApi }) => resourceApi.checkpoints()) }),
+  qrTriggers: () => ({ queryKey: ['qr-triggers'], queryFn: () => import('@/lib/resource-api').then(({ resourceApi }) => resourceApi.qrTriggers()) }),
 };

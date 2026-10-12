@@ -12,6 +12,7 @@ use App\Models\UserDevice;
 use App\Services\Audit\AuditService;
 use App\Services\Games\GameScope;
 use App\Services\Idempotency\IdempotencyStore;
+use App\Services\Organizations\OrganizationScope;
 use App\Services\Runtime\RuntimeRoles;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -20,7 +21,32 @@ use Illuminate\Support\Facades\Validator;
 
 class QrService
 {
-    public function __construct(private GameScope $scope, private IdempotencyStore $idempotency, private QrEvents $events, private RuntimeRoles $roles, private AuditService $audit) {}
+    public function __construct(private GameScope $scope, private OrganizationScope $organizations, private IdempotencyStore $idempotency, private QrEvents $events, private RuntimeRoles $roles, private AuditService $audit) {}
+
+    public function list(User $actor): array
+    {
+        return QrTrigger::query()->whereIn('organization_id', $this->organizations->organizations($actor, true)->select('id'))
+            ->with(['organization', 'checkpoint'])->orderBy('public_id')->get()->map(fn (QrTrigger $trigger): array => $this->project($trigger))->all();
+    }
+
+    public function resolve(User $actor, string $id): array
+    {
+        $trigger = QrTrigger::query()->whereIn('organization_id', $this->organizations->organizations($actor, true)->select('id'))
+            ->with(['organization', 'checkpoint'])->where('public_id', $id)->first();
+        if (! $trigger) {
+            throw $this->organizations->notFound();
+        }
+
+        return $this->project($trigger);
+    }
+
+    private function project(QrTrigger $trigger): array
+    {
+        return ['id' => $trigger->public_id, 'organization_id' => $trigger->organization->public_id, 'status' => $trigger->status,
+            'metadata' => $trigger->metadata, 'checkpoint' => $trigger->checkpoint ? ['id' => $trigger->checkpoint->public_id,
+                'name' => $trigger->checkpoint->name, 'status' => $trigger->checkpoint->status] : null,
+            'created_at' => $trigger->created_at?->toISOString(), 'updated_at' => $trigger->updated_at?->toISOString()];
+    }
 
     /** @return array{trigger:array,identifier:string} */
     public function create(User $actor, array $input): array

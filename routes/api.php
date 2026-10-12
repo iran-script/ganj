@@ -31,7 +31,9 @@ Route::prefix('v1')->group(function (): void {
         Route::get('/checkpoints/{checkpoint_id}', [CheckpointController::class, 'show'])->name('checkpoints.show');
         Route::patch('/checkpoints/{checkpoint_id}', [CheckpointController::class, 'save'])->name('checkpoints.update');
         Route::post('/qr/scan', [QrController::class, 'scan'])->middleware('throttle:qr-scan')->name('qr.scan');
+        Route::get('/qr/triggers', [QrController::class, 'index'])->name('qr.triggers.index');
         Route::post('/qr/triggers', [QrController::class, 'create'])->name('qr.triggers.create');
+        Route::get('/qr/triggers/{trigger_id}', [QrController::class, 'show'])->name('qr.triggers.show');
         foreach (['activate', 'deactivate', 'revoke'] as $action) {
             Route::post('/qr/triggers/{trigger_id}/'.$action, [QrController::class, 'lifecycle'])->defaults('action', $action)->name('qr.triggers.'.$action);
         }

@@ -22,6 +22,16 @@ class QrController extends Controller
         return response()->json(['data' => $this->qr->create($request->user(), $request->all())], 201)->header('Cache-Control', 'no-store');
     }
 
+    public function index(Request $request): JsonResponse
+    {
+        return response()->json(['data' => $this->qr->list($request->user())])->header('Cache-Control', 'no-store');
+    }
+
+    public function show(Request $request): JsonResponse
+    {
+        return response()->json(['data' => $this->qr->resolve($request->user(), $request->route('trigger_id'))])->header('Cache-Control', 'no-store');
+    }
+
     public function lifecycle(Request $request): JsonResponse
     {
         return response()->json(['data' => $this->qr->lifecycle($request->user(), $request->route('trigger_id'), $request->route('action') === 'revoke' ? 'REVOKED' : ($request->route('action') === 'activate' ? 'ACTIVE' : 'INACTIVE'))])->header('Cache-Control', 'no-store');
