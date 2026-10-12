@@ -94,6 +94,7 @@ jobs:
           php artisan migrate:fresh --force --no-interaction
           php artisan migrate:rollback --step=1 --force --no-interaction
           php artisan migrate --force --no-interaction
+          php artisan migrate:fresh --force --no-interaction
 
       - name: Check PHP formatting
         run: vendor/bin/pint --test
@@ -111,6 +112,9 @@ jobs:
           tests/Feature/QrTriggerManagementTest.php
           tests/Feature/CheckpointServiceTest.php
           tests/Feature/InlineGpsScenarioTest.php
+
+      - name: Reset database before full suite
+        run: php artisan migrate:fresh --force --no-interaction
 
       - name: Run full backend suite
         run: php artisan test --compact
