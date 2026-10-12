@@ -22,7 +22,7 @@ class RuntimeProjection
         $roles = PlayerRoleAssignment::where('team_scenario_instance_id', $instance->id)->whereNull('released_at')->get();
         $checkpoints = Checkpoint::where('organization_id', $instance->session->organization_id)
             ->whereIn('public_id', $nodes->filter(fn (TeamNodeInstance $node): bool => in_array($node->node->node_type, ['GPS / Location', 'Checkpoint'], true))
-                ->map(fn (TeamNodeInstance $node): ?string => $node->node->config['checkpoint_id'] ?? null))
+                ->map(fn (TeamNodeInstance $node): ?string => $node->node->config['checkpoint_id'] ?? null)->filter())
             ->selectRaw('public_id,name,type,radius_meters,ST_AsGeoJSON(geom) AS geojson')->get()->keyBy('public_id')->all();
 
         return ['id' => $instance->public_id, 'session_id' => $instance->session->public_id, 'team_id' => $instance->registration->team->public_id,
@@ -45,10 +45,14 @@ class RuntimeProjection
         $config = $node->node->config;
         $safe = $this->policy->config($node, $player);
         if ($node->status !== 'LOCKED' && in_array($node->node->node_type, ['GPS / Location', 'Checkpoint'], true)) {
-            $checkpoint = $checkpoints !== null ? ($checkpoints[$config['checkpoint_id']] ?? null)
+            if ($node->node->node_type === 'GPS / Location' && isset($config['latitude'], $config['longitude'], $config['radius_m'])) {
+                $safe['gps'] = ['latitude' => $config['latitude'], 'longitude' => $config['longitude'], 'radius_m' => $config['radius_m'],
+                    'accuracy_m' => $config['accuracy_m'] ?? null, 'dwell_seconds' => $config['dwell_seconds'] ?? 0];
+            }
+            $checkpoint = isset($config['checkpoint_id']) ? ($checkpoints !== null ? ($checkpoints[$config['checkpoint_id']] ?? null)
                 : Checkpoint::where('public_id', $config['checkpoint_id'])->where('organization_id', $node->instance->session->organization_id)
-                    ->selectRaw('public_id,name,type,radius_meters,ST_AsGeoJSON(geom) AS geojson')->first();
-            if ($checkpoint) {
+                    ->selectRaw('public_id,name,type,radius_meters,ST_AsGeoJSON(geom) AS geojson')->first()) : null;
+            if ($checkpoint && ! isset($safe['gps'])) {
                 $safe['checkpoint'] = ['id' => $checkpoint->public_id, 'name' => $checkpoint->name, 'type' => $checkpoint->type,
                     'geom' => json_decode($checkpoint->geojson, true), 'radius_meters' => json_decode(json_encode($checkpoint->radius_meters, JSON_THROW_ON_ERROR), true, flags: JSON_THROW_ON_ERROR)];
             }

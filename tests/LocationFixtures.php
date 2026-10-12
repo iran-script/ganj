@@ -21,7 +21,7 @@ trait LocationFixtures
 {
     use RuntimeFixtures;
 
-    protected function locationFixture(array $policy = [], int $teamCount = 1): array
+    protected function locationFixture(array $policy = [], int $teamCount = 1, ?array $gpsConfig = null): array
     {
         $this->adapters();
         [$admin, , $session] = $this->sessionFixture();
@@ -32,7 +32,8 @@ trait LocationFixtures
         $checkpoint = Checkpoint::factory()->create(['organization_id' => $session->organization_id, 'config' => $policy]);
         $scenario = Scenario::factory()->create(['organization_id' => $session->organization_id, 'created_by' => $admin->id]);
         $version = ScenarioVersion::factory()->create(['scenario_id' => $scenario->id]);
-        app(ScenarioService::class)->execute($admin, 'saveGraph', $this->runtimeGraph('Checkpoint', ['checkpoint_id' => $checkpoint->public_id]) + ['revision_token' => $version->revision_token], $version->public_id);
+        $graph = $gpsConfig !== null ? $this->runtimeGraph('GPS / Location', $gpsConfig) : $this->runtimeGraph('Checkpoint', ['checkpoint_id' => $checkpoint->public_id]);
+        app(ScenarioService::class)->execute($admin, 'saveGraph', $graph + ['revision_token' => $version->revision_token], $version->public_id);
         $this->publishFixture($admin, $version->fresh());
         $this->app->instance(ScenarioAssignmentReadiness::class, new class($version->public_id) implements ScenarioAssignmentReadiness
         {

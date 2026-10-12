@@ -148,7 +148,7 @@ class ScenarioService
     {
         $this->draft($version);
         $this->revision($version, $input);
-        $graph = array_intersect_key($input, array_flip(['nodes', 'edges', 'variables', 'conditions', 'subflows']));
+        $graph = $this->graphs->normalize(array_intersect_key($input, array_flip(['nodes', 'edges', 'variables', 'conditions', 'subflows'])), $version->scenario->organization_id);
         $this->graphs->replace($version, $graph);
         $version->forceFill(['revision_token' => (string) Str::uuid()])->save();
         $validation = $this->validator->validate($graph, $version->scenario->organization_id);

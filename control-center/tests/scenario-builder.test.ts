@@ -8,6 +8,7 @@ describe('scenario builder foundation', () => {
   it('creates canonical starter configs without arbitrary fields', () => {
     expect(defaultScenarioConfig('Message')).toEqual({ text: '' });
     expect(defaultScenarioConfig('Puzzle')).toMatchObject({ case_sensitive: false, trim_whitespace: true });
+    expect(defaultScenarioConfig('GPS / Location')).toMatchObject({ latitude: '', longitude: '', radius_m: '' });
     expect(defaultScenarioConfig('Start')).toEqual({});
   });
 

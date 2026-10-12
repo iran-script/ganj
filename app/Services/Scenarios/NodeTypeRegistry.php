@@ -21,7 +21,11 @@ class NodeTypeRegistry
             'Subflow' => [[], ['subflow']], 'Message' => [['text' => 'required|string|max:10000'], []],
             'Show Image' => [['asset_id' => 'required|uuid', 'checksum' => 'required|string|regex:/^[a-f0-9]{64}$/'], ['media']],
             'Show Video' => [['asset_id' => 'required|uuid', 'checksum' => 'required|string|regex:/^[a-f0-9]{64}$/'], ['media']],
-            'GPS / Location' => [['checkpoint_id' => 'required|uuid', 'min_accuracy' => 'required|numeric|min:1|max:1000', 'required_player_count' => 'required|integer|min:1|max:8', 'dwell_time' => 'required|integer|min:0|max:86400'] + app(LocationInput::class)->policyRules(), ['checkpoint']],
+            'GPS / Location' => [['checkpoint_id' => 'sometimes|uuid', 'latitude' => 'sometimes|numeric|between:-90,90',
+                'longitude' => 'sometimes|numeric|between:-180,180', 'radius_m' => 'sometimes|numeric|min:0.01|max:100000',
+                'accuracy_m' => 'sometimes|nullable|numeric|min:0.01|max:1000', 'dwell_seconds' => 'sometimes|integer|min:0|max:86400',
+                'min_accuracy' => 'sometimes|numeric|min:1|max:1000', 'required_player_count' => 'sometimes|integer|min:1|max:8',
+                'dwell_time' => 'sometimes|integer|min:0|max:86400'] + app(LocationInput::class)->policyRules(), []],
             'Checkpoint' => [['checkpoint_id' => 'required|uuid'], ['checkpoint']],
             'QR' => [['trigger_id' => 'required|uuid', 'checkpoint_id' => 'sometimes|uuid',
                 'role_policy' => 'sometimes|in:ANY_TEAM_MEMBER,ACTIVE_SLOT,SPECIFIC_ROLE,SPECIFIC_PLAYER',
@@ -70,6 +74,10 @@ class NodeTypeRegistry
         }
         $validationConfig = array_diff_key($config, ['role_content' => true, 'required_device_capability' => true, 'score' => true]);
         if (Validator::make($validationConfig, $definition['rules'])->fails()) {
+            return ['INVALID_NODE_CONFIG'];
+        }
+        if ($type === 'GPS / Location' && ! isset($config['checkpoint_id'])
+            && ! (isset($config['latitude'], $config['longitude'], $config['radius_m']))) {
             return ['INVALID_NODE_CONFIG'];
         }
         if ($type === 'Multiple Choice') {

@@ -3,6 +3,7 @@ import type { ScenarioEdge, ScenarioNode, ScenarioNodeType } from '@/types/scena
 export function defaultScenarioConfig(type: ScenarioNodeType): Record<string, unknown> {
   if (type === 'Message') return { text: '' };
   if (type === 'Puzzle') return { prompt: '', expected_answer: '', case_sensitive: false, trim_whitespace: true };
+  if (type === 'GPS / Location') return { latitude: '', longitude: '', radius_m: '', accuracy_m: '', dwell_seconds: 0 };
   return {};
 }
 

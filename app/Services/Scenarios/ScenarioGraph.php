@@ -3,6 +3,7 @@
 namespace App\Services\Scenarios;
 
 use App\Exceptions\ApiException;
+use App\Models\Checkpoint;
 use App\Models\ScenarioCondition;
 use App\Models\ScenarioEdge;
 use App\Models\ScenarioNode;
@@ -43,6 +44,7 @@ class ScenarioGraph
         if (DB::transactionLevel() === 0 || $version->status !== 'DRAFT') {
             throw new ApiException('ACTION_NOT_ALLOWED', 'Only a locked draft graph may be changed.', [], 409);
         }
+        $graph = $this->normalize($graph, $version->scenario->organization_id);
         $result = $this->validator->validate($graph, $version->scenario->organization_id, false);
         if ($result['status'] !== 'PASS') {
             throw new ApiException('VALIDATION_FAILED', 'The graph is structurally invalid.', $result, 422);
@@ -71,6 +73,28 @@ class ScenarioGraph
             $subVersion = ScenarioSubflowVersion::where('scenario_subflow_id', $subflow->id)->where('version_no', $binding['version_no'])->lockForUpdate()->firstOrFail();
             (new ScenarioSubflowBinding)->forceFill(['scenario_version_id' => $version->id, 'node_id' => $keys[$binding['node_key']], 'subflow_version_id' => $subVersion->id])->save();
         }
+    }
+
+    public function normalize(array $graph, int $organizationId): array
+    {
+        foreach ($graph['nodes'] as &$node) {
+            if (($node['node_type'] ?? null) !== 'GPS / Location' || ! isset($node['config']['checkpoint_id'])) {
+                continue;
+            }
+            if (isset($node['config']['latitude'], $node['config']['longitude'], $node['config']['radius_m'])) {
+                continue;
+            }
+            $checkpoint = Checkpoint::query()->where('organization_id', $organizationId)->where('public_id', $node['config']['checkpoint_id'])
+                ->selectRaw('ST_X(geom) AS longitude, ST_Y(geom) AS latitude, radius_meters')->first();
+            if ($checkpoint) {
+                $node['config']['latitude'] ??= (float) $checkpoint->latitude;
+                $node['config']['longitude'] ??= (float) $checkpoint->longitude;
+                $node['config']['radius_m'] ??= (float) $checkpoint->radius_meters;
+            }
+        }
+        unset($node);
+
+        return $graph;
     }
 
     public function lockDependencies(ScenarioVersion $version): void

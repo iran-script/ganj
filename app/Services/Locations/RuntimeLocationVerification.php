@@ -24,10 +24,12 @@ class RuntimeLocationVerification implements LocationVerification
             || $player->game_session_team_id !== $node->instance->game_session_team_id) {
             throw new ApiException('ACTION_NOT_ALLOWED', 'Location verification requires active Runtime context.', [], 409);
         }
-        $checkpoint = Checkpoint::where('public_id', $node->node->config['checkpoint_id'])
-            ->where('organization_id', $node->instance->session->organization_id)->first();
-        if (! $checkpoint) {
-            throw new ApiException('RESOURCE_NOT_FOUND', 'Checkpoint not found.', [], 404);
+        $config = $node->node->config;
+        $checkpoint = isset($config['checkpoint_id']) ? Checkpoint::where('public_id', $config['checkpoint_id'])
+            ->where('organization_id', $node->instance->session->organization_id)->first() : null;
+        $inline = isset($config['latitude'], $config['longitude'], $config['radius_m']);
+        if (! $inline && ! $checkpoint) {
+            throw new ApiException('RESOURCE_NOT_FOUND', 'GPS location resource not found.', [], 404);
         }
         $policy = $this->verifier->policy($checkpoint, $node);
         $hash = hash('sha256', json_encode($policy));
@@ -44,7 +46,7 @@ class RuntimeLocationVerification implements LocationVerification
         $lastResume = DB::table('runtime_events')->where('aggregate_id', $node->instance->public_id)->where('event_type', 'runtime.resumed.v1')->max('occurred_at');
         $eligible = [];
         foreach ($rows as $row) {
-            if ($checkpoint->status !== 'ACTIVE' || ! $row->eligible || $row->result !== 'INSIDE' || $row->policy_hash !== $hash
+            if ((! $inline && $checkpoint->status !== 'ACTIVE') || ! $row->eligible || $row->result !== 'INSIDE' || $row->policy_hash !== $hash
                 || CarbonImmutable::parse($row->server_received_at)->lessThan(now()->subSeconds(config('location.fresh_seconds')))
                 || CarbonImmutable::parse($row->client_timestamp)->lessThan(now()->subSeconds(config('location.fresh_seconds')))
                 || ($lastResume && CarbonImmutable::parse($row->server_received_at)->lessThanOrEqualTo(CarbonImmutable::parse($lastResume)))
@@ -67,7 +69,8 @@ class RuntimeLocationVerification implements LocationVerification
         $eventReference = $witness ? DB::table('location_events')->where('id', $witness->location_event_id)
             ->where('server_received_at', $witness->location_event_received_at)->value('public_id') : null;
         $this->events->record($complete ? 'checkpoint_verified' : 'checkpoint_rejected', $player,
-            ['checkpoint_id' => $checkpoint->public_id, 'node_instance_id' => $node->public_id, 'command_id' => $commandId,
+            ['checkpoint_id' => $checkpoint?->public_id, 'gps_coordinates' => $inline ? ['latitude' => $config['latitude'], 'longitude' => $config['longitude'], 'radius_m' => $config['radius_m']] : null,
+                'node_instance_id' => $node->public_id, 'command_id' => $commandId,
                 'player_id' => $witness?->public_id ?? $player->public_id, 'eligible_player_count' => count($eligible),
                 'distance_meters' => $witness?->distance_meters, 'accuracy' => $witness?->accuracy, 'location_event_id' => $eventReference]);
 
