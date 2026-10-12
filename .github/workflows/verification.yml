@@ -117,7 +117,7 @@ jobs:
         run: php artisan migrate:fresh --force --no-interaction
 
       - name: Run full backend suite
-        run: php artisan test --compact
+        run: php artisan test --compact --process-isolation
 
   control-center:
     name: Control Center
