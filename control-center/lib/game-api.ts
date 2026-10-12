@@ -10,6 +10,7 @@ export type CreateGameInput = {
   status: 'DRAFT' | 'ACTIVE';
   pricing?: { mode: 'FREE' | 'PAID'; amount?: number; currency?: string };
   scenario_version_id?: string;
+  reason: string;
 };
 
 export const gameApi = {
