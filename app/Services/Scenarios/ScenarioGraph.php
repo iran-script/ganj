@@ -85,6 +85,7 @@ class ScenarioGraph
                 continue;
             }
             $checkpoint = Checkpoint::query()->where('organization_id', $organizationId)->where('public_id', $node['config']['checkpoint_id'])
+                ->where('status', 'ACTIVE')->where('type', 'POINT')
                 ->selectRaw('ST_X(geom) AS longitude, ST_Y(geom) AS latitude, radius_meters')->first();
             if ($checkpoint) {
                 $node['config']['latitude'] ??= (float) $checkpoint->latitude;
