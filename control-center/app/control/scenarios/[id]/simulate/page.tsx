@@ -1,0 +1,2 @@
+import { ScenarioBuilderScreen } from '@/components/scenario-builder';
+export default async function SimulatePage({ params }: { params: Promise<{ id: string }> }) { const { id } = await params; return <><div className="mb-5 rounded-lg border border-[var(--nexo-info)]/30 bg-[var(--nexo-info)]/10 p-4 text-sm text-[var(--nexo-info)]">شبیه‌سازی ساختاری و غیرعملیاتی؛ بدون اجرای Runtime یا ایجاد اثر جانبی.</div><ScenarioBuilderScreen scenarioId={id} readOnly /></>; }

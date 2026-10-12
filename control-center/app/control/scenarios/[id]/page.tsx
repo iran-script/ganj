@@ -1,0 +1,3 @@
+import Link from 'next/link';
+import { ScenarioBuilderScreen } from '@/components/scenario-builder';
+export default async function ScenarioDetailPage({ params }: { params: Promise<{ id: string }> }) { const { id } = await params; return <><div className="mb-5 flex items-center justify-between"><Link href={`/control/scenarios/${id}/versions`} className="text-sm text-[var(--nexo-muted)] hover:text-white">تاریخچه نسخه‌ها</Link><Link href={`/control/scenarios/${id}/builder`} className="rounded-lg bg-[var(--nexo-amber)] px-4 py-2 text-sm font-semibold text-[#17120b]">باز کردن Builder</Link></div><ScenarioBuilderScreen scenarioId={id} /></>; }

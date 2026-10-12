@@ -1,0 +1,6 @@
+'use client';
+import { useQuery } from '@tanstack/react-query';
+import { use } from 'react';
+import { scenarioApi } from '@/lib/scenario-api';
+import { Button, DataTable, ErrorState, LoadingState, PageHeader, StatusBadge } from '@/components/ui';
+export default function VersionsPage({ params }: { params: Promise<{ id: string }> }) { const { id } = use(params); const result = useQuery({ queryKey: ['scenarios', id, 'versions'], queryFn: () => scenarioApi.versions(id) }); if (result.isPending) return <LoadingState />; if (result.isError) return <ErrorState message="تاریخچه نسخه‌ها بارگذاری نشد." />; return <><PageHeader eyebrow="VERSION HISTORY" title="تاریخچه نسخه‌ها" actions={<Button href={`/control/scenarios/${id}/builder`}>بازگشت به Builder</Button>} /><DataTable headers={['نسخه', 'وضعیت', 'انتشار', 'عملیات']}><>{result.data.map((version) => <tr key={version.id}><td className="px-5 py-4 font-semibold">نسخه {version.version_no}</td><td className="px-5 py-4"><StatusBadge status={version.status} /></td><td className="px-5 py-4 text-xs text-[var(--nexo-muted)]">{version.published_at ? new Date(version.published_at).toLocaleString('fa-IR') : 'پیش‌نویس'}</td><td className="px-5 py-4"><Button href={`/control/scenarios/${id}/builder?version=${version.id}`} variant="ghost">مشاهده گراف</Button></td></tr>)}</></DataTable></>; }

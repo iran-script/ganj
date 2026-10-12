@@ -21,6 +21,7 @@ export type User = {
   status: string;
   roles?: string[];
 };
+export type Organization = { id: string; name?: string; title?: string; status?: string };
 
 export type Game = {
   id: string;
