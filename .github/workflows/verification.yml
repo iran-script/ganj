@@ -1,0 +1,148 @@
+name: NEXO verification
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+      - 'verify/**'
+      - 'feature/**'
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (PostGIS + Redis)
+    runs-on: ubuntu-latest
+    env:
+      APP_ENV: testing
+      APP_DEBUG: false
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: urban_ar_test
+      DB_USERNAME: urban_ar
+      DB_PASSWORD: nexo-ci-test-password
+      CACHE_STORE: array
+      QUEUE_CONNECTION: sync
+      SESSION_DRIVER: array
+      MAIL_MAILER: array
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: 6379
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_DB: urban_ar_test
+          POSTGRES_USER: urban_ar
+          POSTGRES_PASSWORD: nexo-ci-test-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U urban_ar -d urban_ar_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, intl, bcmath, pcntl, pgsql, pdo_pgsql
+          tools: composer:v2
+          coverage: none
+          ini-values: post_max_size=256M
+
+      - name: Install PostgreSQL and Redis clients
+        run: sudo apt-get update && sudo apt-get install --yes postgresql-client redis-tools
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Configure Laravel test key
+        shell: bash
+        run: |
+          echo "APP_KEY=$(php artisan key:generate --show)" >> "$GITHUB_ENV"
+
+      - name: Validate Composer configuration
+        run: composer validate --strict
+
+      - name: Verify PostgreSQL, PostGIS, and Redis
+        run: |
+          PGPASSWORD="$DB_PASSWORD" psql --host="$DB_HOST" --port="$DB_PORT" --username="$DB_USERNAME" --dbname="$DB_DATABASE" --command='SELECT PostGIS_Version();'
+          redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" ping
+
+      - name: Run migrations from a clean database
+        run: |
+          php artisan migrate:fresh --force --no-interaction
+          php artisan migrate:rollback --step=1 --force --no-interaction
+          php artisan migrate --force --no-interaction
+
+      - name: Check PHP formatting
+        run: vendor/bin/pint --test
+
+      - name: Check PHP syntax
+        shell: bash
+        run: find app database routes tests -type f -name '*.php' -print0 | xargs -0 -n1 php -l
+
+      - name: Check diff whitespace
+        run: git diff --check
+
+      - name: Run focused resource and scenario tests
+        run: >-
+          php artisan test --compact
+          tests/Feature/QrTriggerManagementTest.php
+          tests/Feature/CheckpointServiceTest.php
+          tests/Feature/InlineGpsScenarioTest.php
+
+      - name: Run full backend suite
+        run: php artisan test --compact
+
+  control-center:
+    name: Control Center
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: control-center
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: control-center/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Production build
+        run: npm run build
