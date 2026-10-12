@@ -3,6 +3,7 @@
 namespace App\Services\Scenarios;
 
 use App\Models\Checkpoint;
+use App\Models\MediaAsset;
 use App\Models\QrTrigger;
 use App\Models\ScenarioSubflow;
 use App\Models\ScenarioSubflowVersion;
@@ -38,7 +39,8 @@ class GraphValidator
             'edges' => 'present|array|list|max:5000', 'edges.*' => 'array:edge_key,from_node,to_node,priority,condition_group_id,metadata',
             'edges.*.edge_key' => 'required|string|regex:/^[A-Za-z][A-Za-z0-9_-]{0,99}$/',
             'edges.*.from_node' => 'required|string|max:100', 'edges.*.to_node' => 'required|string|max:100', 'edges.*.priority' => 'required|integer|min:0|max:2147483647',
-            'edges.*.condition_group_id' => 'sometimes|nullable|uuid', 'edges.*.metadata' => 'sometimes|array|max:0',
+            'edges.*.condition_group_id' => 'sometimes|nullable|uuid', 'edges.*.metadata' => 'sometimes|array:outcome,label',
+            'edges.*.metadata.outcome' => 'sometimes|in:SUCCESS,FAILURE,TIMEOUT,TRUE,FALSE,APPROVED,REJECTED', 'edges.*.metadata.label' => 'sometimes|string|max:100',
             'variables' => 'sometimes|array|list|max:500', 'variables.*' => 'array:key,type,scope,default_value,writable',
             'variables.*.key' => 'required|string|regex:/^[A-Za-z][A-Za-z0-9_]{0,99}$/', 'variables.*.type' => 'required|string|in:STRING,INTEGER,DECIMAL,BOOLEAN,DATETIME,JSON',
             'variables.*.scope' => 'required|string|in:SCENARIO,TEAM,PLAYER,NODE', 'variables.*.default_value' => 'present', 'variables.*.writable' => 'required|boolean',
@@ -112,14 +114,49 @@ class GraphValidator
                 $add('DUPLICATE_NODE_KEY', "nodes.$i.node_key");
             }
             $nodes[$key] = $node;
-            foreach ($this->registry->errors($node['node_type'], $node['config']) as $code) {
+            $configErrors = $this->registry->errors($node['node_type'], $node['config']);
+            foreach ($configErrors as $code) {
                 $add($code, "nodes.$i.config");
+            }
+            if ($configErrors !== []) {
+                continue;
+            }
+            $config = $node['config'];
+            $type = $node['node_type'];
+            if (in_array($type, ['SetVariable', 'CheckVariable', 'RandomPlayer'], true)) {
+                $definition = $variables[$config['variable'] ?? ''] ?? null;
+                if (! $definition || $definition['scope'] !== 'TEAM' || ! in_array($definition['type'], ['STRING', 'INTEGER', 'BOOLEAN'], true)) {
+                    $add('INVALID_VARIABLE_REFERENCE', "nodes.$i.config.variable");
+                } elseif (($type !== 'CheckVariable' && ! $definition['writable'])
+                    || ($type === 'RandomPlayer' ? $definition['type'] !== 'STRING' : (! in_array($config['operator'] ?? '', ['EXISTS', 'NOT_EXISTS'], true) && ! $this->matches($definition['type'], $config['value'] ?? null)))
+                    || (in_array($config['operator'] ?? '', ['>', '>=', '<', '<='], true) && $definition['type'] !== 'INTEGER')) {
+                    $add('INVALID_VARIABLE_TYPE', "nodes.$i.config");
+                }
+            }
+            if ($type === 'Condition' && isset($config['operand'])) {
+                $operandType = str_starts_with($config['operand'], 'variables.') ? ($variables[substr($config['operand'], 10)]['type'] ?? null) : (['score' => 'INTEGER', 'elapsed_time' => 'INTEGER', 'team.member_count' => 'INTEGER', 'player.role' => 'STRING'][$config['operand']] ?? null);
+                if ($operandType === null || isset($config['condition_group_id']) || (! in_array($config['operator'] ?? '', ['EXISTS', 'NOT_EXISTS'], true) && ! $this->matches($operandType, $config['value'] ?? null))
+                    || (in_array($config['operator'] ?? '', ['>', '>=', '<', '<='], true) && $operandType !== 'INTEGER')) {
+                    $add('INVALID_CONDITION', "nodes.$i.config");
+                }
+            }
+            foreach ($config['required_variables'] ?? [] as $requiredVariable) {
+                if (($variables[$requiredVariable]['type'] ?? null) !== 'BOOLEAN' || ($variables[$requiredVariable]['scope'] ?? null) !== 'TEAM') {
+                    $add('INVALID_VARIABLE_REFERENCE', "nodes.$i.config.required_variables");
+                }
+            }
+            if (($config['support_policy'] ?? null) === 'DENY' && ($config['minimum_player_count'] ?? 1) > 4) {
+                $add('IMPOSSIBLE_TEAM_CONFIGURATION', "nodes.$i.config");
             }
             if (isset($node['config']['condition_group_id']) && ! isset($groups[$node['config']['condition_group_id']])) {
                 $add('INVALID_CONDITION_REFERENCE', "nodes.$i.config.condition_group_id");
             }
             $this->templates($node['config'], array_merge(array_keys($builtins), array_map(fn (string $key): string => 'variables.'.$key, array_keys($variables))), "nodes.$i.config", $add);
             if ($semantic) {
+                if ($type === 'MediaReveal' && ! MediaAsset::where('public_id', $config['media_asset_id'] ?? null)
+                    ->where('organization_id', $organizationId)->where('purpose', 'LIBRARY')->exists()) {
+                    $add('DEPENDENCY_NOT_READY', "nodes.$i.config.media_asset_id");
+                }
                 if ($node['node_type'] === 'GPS / Location'
                     && isset($node['config']['checkpoint_id'])
                     && ! isset($node['config']['latitude'], $node['config']['longitude'], $node['config']['radius_m'])
@@ -156,6 +193,9 @@ class GraphValidator
             }
             if (isset($edge['condition_group_id']) && ! isset($groups[$edge['condition_group_id']])) {
                 $add('INVALID_CONDITION_REFERENCE', "edges.$i.condition_group_id");
+            }
+            if (isset($edge['metadata']['outcome']) && (! in_array($edge['metadata']['outcome'], app(AuthoringNodeCatalog::class)->outcomes($nodes[$edge['from_node']]['node_type'], $nodes[$edge['from_node']]['config']), true) || isset($edge['condition_group_id']))) {
+                $add('INVALID_EDGE_OUTCOME', "edges.$i.metadata.outcome");
             }
             $adjacency[$edge['from_node']][] = $edge['to_node'];
             $reverse[$edge['to_node']][] = $edge['from_node'];
@@ -246,6 +286,18 @@ class GraphValidator
                 $add('LOOP_GUARD_UNSUPPORTED', 'edges');
             }
             foreach ($nodes as $key => $node) {
+                $outgoing = array_values(array_filter($graph['edges'], fn (array $edge): bool => $edge['from_node'] === $key));
+                $labeled = array_filter($outgoing, fn (array $edge): bool => isset($edge['metadata']['outcome']));
+                $outcomes = array_map(fn (array $edge): string => $edge['metadata']['outcome'], $labeled);
+                $expected = app(AuthoringNodeCatalog::class)->outcomes($node['node_type'], $node['config']);
+                if ($labeled && (count($outcomes) !== count(array_unique($outcomes)) || count($labeled) !== count($outgoing))) {
+                    $add('AMBIGUOUS_EDGE_OUTCOME', 'nodes.'.$key);
+                }
+                if ((in_array('TRUE', $expected, true) || $labeled || isset($node['config']['timeout_seconds'])
+                    || in_array($node['node_type'], array_keys(app(AuthoringNodeCatalog::class)->rules()), true)) && array_diff($expected, $outcomes)
+                    && ! ($expected === ['SUCCESS'] && count($outgoing) === 1 && ! $labeled)) {
+                    $add('MISSING_EDGE_OUTCOME', 'nodes.'.$key);
+                }
                 if ($node['node_type'] === 'Finish' && isset($adjacency[$key])) {
                     $add('FINISH_HAS_OUTGOING_EDGE', 'nodes.'.$key);
                 }

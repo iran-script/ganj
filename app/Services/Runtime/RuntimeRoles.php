@@ -57,7 +57,9 @@ class RuntimeRoles
             throw new ApiException('ACTION_NOT_ALLOWED', 'Not enough eligible role participants.', [], 409);
         }
         $last = PlayerRoleAssignment::where('team_scenario_instance_id', $instance->id)->selectRaw('game_session_player_id, max(id) as last_assignment')->groupBy('game_session_player_id')->pluck('last_assignment', 'game_session_player_id');
-        $players = $players->sortBy(fn (GameSessionPlayer $p): array => [$last[$p->id] ?? 0, hash_hmac('sha256', $node->node->node_key.':'.$p->public_id, $instance->random_seed)])->values();
+        if ($node->node->node_type !== 'AssignRole') {
+            $players = $players->sortBy(fn (GameSessionPlayer $p): array => [$last[$p->id] ?? 0, hash_hmac('sha256', $node->node->node_key.':'.$p->public_id, $instance->random_seed)])->values();
+        }
         foreach (PlayerRoleAssignment::where('team_scenario_instance_id', $instance->id)->whereNull('released_at')->get() as $assignment) {
             $this->release($instance, $assignment);
         }

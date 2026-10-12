@@ -31,6 +31,9 @@ class BarrierEvaluator
         $requiredRoles = $node->node->config['required_roles'] ?? [];
         $roleComplete = $requiredRoles === [] || count(array_intersect($requiredRoles, array_values($roles))) === count(array_unique($requiredRoles));
         $minimum = (int) ($node->node->config['minimum_player_count'] ?? 1);
+        if ($node->node->config['all_active_players'] ?? false) {
+            $minimum = $instance->registration->players()->whereIn('participation_status', ['ACTIVE', 'DISCONNECTED'])->count();
+        }
         $activeSlotOnly = ($node->node->config['active_slot_only'] ?? false) === true;
         $active = ! $activeSlotOnly || $role !== null;
         $count = count(array_unique($players));

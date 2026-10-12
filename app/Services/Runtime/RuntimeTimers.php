@@ -6,6 +6,7 @@ use App\Models\RuntimeTimer;
 use App\Models\TeamNodeInstance;
 use App\Models\TeamScenarioInstance;
 use App\Models\User;
+use Carbon\CarbonImmutable;
 
 class RuntimeTimers
 {
@@ -19,8 +20,10 @@ class RuntimeTimers
         }
         $timer = new RuntimeTimer;
         $timer->forceFill(['team_scenario_instance_id' => $instance->id, 'node_instance_id' => $node?->id,
-            'timer_type' => $node ? (($node->node->config['pause_behavior'] ?? 'PAUSE') === 'CONTINUE' ? 'WALL_CLOCK' : 'NODE') : 'TEAM', 'started_at' => now()->startOfSecond(), 'status' => 'RUNNING',
-            'duration_seconds' => $node?->node->config['duration_seconds'] ?? null, 'accumulated_paused_seconds' => 0])->save();
+            'timer_type' => $node ? ((($node->node->config['pause_behavior'] ?? 'PAUSE') === 'CONTINUE' || ($node->node->config['mode'] ?? '') === 'TIME_WINDOW') ? 'WALL_CLOCK' : 'NODE') : 'TEAM', 'started_at' => now()->startOfSecond(), 'status' => 'RUNNING',
+            'duration_seconds' => $node && ($node->node->config['mode'] ?? '') === 'TIME_WINDOW'
+                ? max(0, CarbonImmutable::parse($node->node->config['ends_at'])->timestamp - now()->timestamp)
+                : ($node?->node->config['timeout_seconds'] ?? $node?->node->config['duration_seconds'] ?? null), 'accumulated_paused_seconds' => 0])->save();
         $this->events->record('timer_started', $instance, $node, data: ['timer_id' => $timer->public_id]);
 
         return $timer;

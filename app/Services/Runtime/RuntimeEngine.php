@@ -16,6 +16,7 @@ use App\Models\UserDevice;
 use App\Services\Audit\AuditService;
 use App\Services\Games\GameEvents;
 use App\Services\Games\GameScope;
+use App\Services\Scenarios\AuthoringNodeCatalog;
 use App\Services\Scoring\ScoringService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -167,6 +168,16 @@ class RuntimeEngine
                         if ($node->status !== 'ACTIVE') {
                             throw new ApiException('STATE_TRANSITION_INVALID', 'Node must be ACTIVE.', [], 409);
                         }
+                        $config = $node->node->config;
+                        if (isset($config['timeout_seconds']) || ($node->node->node_type === 'Time' && in_array($config['mode'], ['TIMEOUT', 'TIME_WINDOW'], true))) {
+                            $timer = RuntimeTimer::where('node_instance_id', $node->id)->first();
+                            if ($timer && $this->timers->elapsed($timer) >= $timer->duration_seconds) {
+                                throw new ApiException('STATE_TRANSITION_INVALID', 'The server deadline has passed.', [], 409);
+                            }
+                        }
+                        if (isset($node->state_json['retry_at']) && now()->timestamp < $node->state_json['retry_at']) {
+                            throw new ApiException('ACTION_NOT_ALLOWED', 'Wait before retrying this node.', [], 409);
+                        }
                         $result = $this->handlers->submit($node, $player, $input, $command->command_id);
                         $node->forceFill(['attempt_count' => $node->attempt_count + 1, 'version_no' => $node->version_no + 1])->save();
                         $this->events->record('node_submission_received', $instance, $node, $actor, $player, [
@@ -175,6 +186,15 @@ class RuntimeEngine
                             'role_code' => $result['role_code'] ?? $this->roles->roleFor($instance, $player)]);
                         if (! $result['accepted']) {
                             $this->events->record('node_submission_rejected', $instance, $node, $actor, $player, ['command_id' => $command->command_id]);
+                            $config = $node->node->config;
+                            if (($result['result'] ?? '') !== 'WAITING') {
+                                $node->forceFill(['state_json' => array_replace($node->state_json ?? [], ['retry_at' => now()->timestamp + ($config['retry_delay'] ?? 0)])])->save();
+                                if (($config['allow_retry'] ?? true) === false || (isset($config['max_attempts']) && $node->attempt_count >= $config['max_attempts']
+                                    && ScenarioEdge::where('from_node_id', $node->scenario_node_id)->where('metadata->outcome', 'FAILURE')->exists())) {
+                                    $result['fail'] = true;
+                                    app(AuthoringRuntime::class)->outcome($node, 'FAILURE');
+                                }
+                            }
                         }
                         if ($result['complete'] ?? false) {
                             $this->terminal($instance, $node, 'COMPLETED', $actor, $player);
@@ -216,7 +236,7 @@ class RuntimeEngine
     {
         $node->forceFill(['status' => 'ACTIVE', 'started_at' => now(), 'version_no' => $node->version_no + 1])->save();
         $this->events->record('node_started', $instance, $node, $actor, $player);
-        if (in_array($node->node->node_type, ['Timer', 'Wait'], true)) {
+        if (in_array($node->node->node_type, ['Timer', 'Wait', 'Time'], true) || isset($node->node->config['timeout_seconds'])) {
             $this->timers->start($instance, $node);
         }
     }
@@ -229,6 +249,18 @@ class RuntimeEngine
         $node->forceFill(['status' => 'AVAILABLE', 'version_no' => $node->version_no + 1])->save();
         $this->events->record('node_unlocked', $instance, $node);
         $type = $node->node->node_type;
+        if (in_array($type, AuthoringNodeCatalog::AUTOMATIC, true)
+            || ($type === 'Condition' && isset($node->node->config['operand']))
+            || ($type === 'Time' && ($node->node->config['mode'] ?? '') === 'ELAPSED_CHECK')) {
+            $this->start($instance, $node);
+            app(AuthoringRuntime::class)->automatic($node, $player);
+            $this->terminal($instance, $node, 'COMPLETED', null, $player);
+
+            return;
+        }
+        if ($type === 'Time') {
+            $this->start($instance, $node);
+        }
         if ($type === 'Random Player') {
             $players = $instance->registration->players()->whereIn('participation_status', ['READY', 'ACTIVE', 'DISCONNECTED'])->orderBy('public_id')->get();
             if ($players->isEmpty()) {
@@ -252,7 +284,10 @@ class RuntimeEngine
             || ! in_array($node->status, $status === 'SKIPPED' ? ['AVAILABLE', 'ACTIVE'] : ['ACTIVE'], true)) {
             throw new ApiException('STATE_TRANSITION_INVALID', 'Invalid node terminal transition.', [], 409);
         }
-        if ($status === 'FAILED' && ($node->node->node_type !== 'Timer' || ($node->node->config['on_expire'] ?? null) !== 'FAIL')) {
+        if ($status === 'FAILED' && ($node->node->node_type !== 'Timer' || ($node->node->config['on_expire'] ?? null) !== 'FAIL')
+            && ! isset($node->node->config['timeout_seconds']) && ! isset($node->node->config['max_attempts'])
+            && ($node->node->config['allow_retry'] ?? true) !== false && $node->node->node_type !== 'Time'
+            && ! in_array($node->node->node_type, ['PhotoSubmission', 'AudioSubmission', 'FileSubmission'], true)) {
             throw new ApiException('ACTION_NOT_ALLOWED', 'This node does not support failure.', [], 409);
         }
         if ($node->node->node_type === 'Finish' && TeamNodeInstance::where('team_scenario_instance_id', $instance->id)->whereKeyNot($node->id)->whereIn('status', ['AVAILABLE', 'ACTIVE'])->exists()) {
@@ -295,6 +330,12 @@ class RuntimeEngine
     private function next(TeamScenarioInstance $instance, TeamNodeInstance $node, ?GameSessionPlayer $player): Collection
     {
         $edges = ScenarioEdge::where('scenario_version_id', $instance->scenario_version_id)->where('from_node_id', $node->scenario_node_id)->orderBy('priority')->orderBy('edge_key')->get();
+        if ($edges->contains(fn (ScenarioEdge $edge): bool => isset($edge->metadata['outcome']))) {
+            $outcome = $node->state_json['outcome'] ?? ($node->status === 'FAILED' ? 'FAILURE' : 'SUCCESS');
+            $matched = $edges->filter(fn (ScenarioEdge $edge): bool => ($edge->metadata['outcome'] ?? null) === $outcome);
+
+            return TeamNodeInstance::where('team_scenario_instance_id', $instance->id)->whereIn('scenario_node_id', $matched->pluck('to_node_id'))->get();
+        }
         $conditionPassed = $node->node->node_type !== 'Condition'
             || $this->conditions->evaluate($instance, $node->node->config['condition_group_id'], $node, $player);
 
@@ -393,7 +434,14 @@ class RuntimeEngine
                     'command_type' => 'timer_expiry', 'idempotency_key' => $key, 'request_hash' => hash('sha256', $key),
                     'request_payload' => ['timer_id' => $timer->public_id], 'status' => 'PROCESSING', 'created_at' => now()])->save();
                 try {
-                    DB::transaction(fn () => $this->terminal($instance, $node, ($node->node->config['on_expire'] ?? 'COMPLETE') === 'FAIL' ? 'FAILED' : 'COMPLETED'));
+                    DB::transaction(function () use ($instance, $node): void {
+                        $config = $node->node->config;
+                        $timeout = isset($config['timeout_seconds']) || ($node->node->node_type === 'Time' && in_array($config['mode'], ['TIMEOUT', 'TIME_WINDOW'], true));
+                        if ($timeout) {
+                            app(AuthoringRuntime::class)->outcome($node, 'TIMEOUT');
+                        }
+                        $this->terminal($instance, $node, $timeout || ($config['on_expire'] ?? 'COMPLETE') === 'FAIL' ? 'FAILED' : 'COMPLETED');
+                    });
                     $command->forceFill(['status' => 'SUCCEEDED', 'result_payload' => ['node_status' => $node->status], 'completed_at' => now()])->save();
 
                     return 1;

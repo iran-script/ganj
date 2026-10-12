@@ -47,9 +47,16 @@ class NodeTypeRegistry
             'AR Challenge' => [['challenge_id' => 'required|uuid', 'scene_id' => 'required|uuid', 'fallback_policy' => 'required|string|in:REQUIRED_DEVICE,ALTERNATIVE',
                 'required_capabilities' => 'required|array|list|min:1', 'required_capabilities.*' => 'string|max:100'], ['ar']],
         ];
+        $catalog = app(AuthoringNodeCatalog::class);
+        foreach ($catalog->rules() as $type => $rules) {
+            $entries[$type] = [$rules, []];
+        }
+        $entries['Condition'][0] = ['condition_group_id' => 'required_without:operand|uuid',
+            'operand' => 'required_without:condition_group_id|string|max:120',
+            'operator' => 'required_with:operand|in:==,!=,>,>=,<,<=,EXISTS,NOT_EXISTS', 'value' => 'present_with:operand'];
         $result = [];
         foreach ($entries as $code => $entry) {
-            $result[$code] = ['rules' => $entry[0], 'capabilities' => $entry[1], 'random_seed_required' => $code === 'Random Player', 'runtime_handler' => RuntimeHandlers::handlers()[$code] ?? null];
+            $result[$code] = ['rules' => $entry[0] + $catalog->failureRules($code), 'capabilities' => $entry[1], 'random_seed_required' => in_array($code, ['Random Player', 'RandomPlayer'], true), 'runtime_handler' => RuntimeHandlers::handlers()[$code] ?? null];
         }
 
         return $result;
@@ -68,11 +75,23 @@ class NodeTypeRegistry
         if (isset($config['required_device_capability']) && ! is_string($config['required_device_capability'])) {
             return ['INVALID_NODE_CONFIG'];
         }
+        if (isset($config['score']) && Validator::make(['score' => $config['score']], [
+            'score' => 'array:base,completion,first_attempt_bonus,no_hint_bonus,time_bonus',
+            'score.base' => 'sometimes|integer|min:0|max:1000000', 'score.completion' => 'sometimes|integer|min:0|max:1000000',
+            'score.first_attempt_bonus' => 'sometimes|integer|min:0|max:1000000', 'score.no_hint_bonus' => 'sometimes|integer|min:0|max:1000000',
+            'score.time_bonus' => 'sometimes|array:under_seconds,amount', 'score.time_bonus.under_seconds' => 'required_with:score.time_bonus|integer|min:1|max:86400',
+            'score.time_bonus.amount' => 'required_with:score.time_bonus|integer|min:0|max:1000000',
+        ])->fails()) {
+            return ['INVALID_NODE_CONFIG'];
+        }
         $allowed = [...array_filter(array_keys($definition['rules']), fn (string $key): bool => ! str_contains($key, '.')), 'role_content', 'required_device_capability', 'score'];
         if (array_diff(array_keys($config), $allowed)) {
             return ['INVALID_NODE_CONFIG'];
         }
         $validationConfig = array_diff_key($config, ['role_content' => true, 'required_device_capability' => true, 'score' => true]);
+        if (isset($definition['rules']['role_content'], $config['role_content'])) {
+            $validationConfig['role_content'] = $config['role_content'];
+        }
         if (Validator::make($validationConfig, $definition['rules'])->fails()) {
             return ['INVALID_NODE_CONFIG'];
         }

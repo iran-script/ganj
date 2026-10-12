@@ -31,6 +31,9 @@ class RuntimeProjection
             'started_at' => $instance->started_at?->toISOString(), 'completed_at' => $instance->completed_at?->toISOString(),
             'nodes' => $nodes->map(fn (TeamNodeInstance $node): array => $this->node($node, (int) ($contributions[$node->public_id] ?? 0), $checkpoints, $player))->all(),
             'active_node_ids' => $nodes->whereIn('status', ['AVAILABLE', 'ACTIVE'])->pluck('public_id')->values()->all(),
+            'private_messages' => $player ? $nodes->filter(fn (TeamNodeInstance $node): bool => $node->node->node_type === 'RandomPlayer'
+                && ($node->state_json['selected_player_id'] ?? null) === $player->public_id && isset($node->node->config['private_text']))
+                ->map(fn (TeamNodeInstance $node): array => ['id' => $node->public_id, 'text' => $node->node->config['private_text']])->values()->all() : [],
             'roles' => $roles->map(fn (PlayerRoleAssignment $r): array => ['id' => $r->public_id, 'player_id' => $players[$r->game_session_player_id]->public_id,
                 'role_code' => $r->role_code, 'slot_no' => $r->slot_no])->all(),
             'player' => $player ? ['id' => $player->public_id, 'participation_status' => $player->participation_status,
@@ -62,7 +65,7 @@ class RuntimeProjection
         }
 
         return ['id' => $node->public_id, 'node_key' => $node->node->node_key, 'node_type' => $node->node->node_type,
-            'progress' => $node->node->node_type === 'Team Together' ? ($progress ?? RuntimeEvent::where('aggregate_id', $node->public_id)->where('payload->data->contribution', true)->count()) : null,
+            'progress' => in_array($node->node->node_type, ['Team Together', 'TeamTogether', 'Barrier', 'SplitInformation'], true) ? ($progress ?? RuntimeEvent::where('aggregate_id', $node->public_id)->where('payload->data->contribution', true)->count()) : null,
             'selected_player_id' => $node->state_json['selected_player_id'] ?? null, 'title' => $node->node->title, 'status' => $node->status, 'config' => $safe, 'attempt_count' => $node->attempt_count,
             'version_no' => $node->version_no, 'started_at' => $node->started_at?->toISOString(), 'completed_at' => $node->completed_at?->toISOString()];
     }

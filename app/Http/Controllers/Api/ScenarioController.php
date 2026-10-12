@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Scenario;
 use App\Models\ScenarioVersion;
+use App\Services\Scenarios\AuthoringNodeCatalog;
 use App\Services\Scenarios\NodeTypeRegistry;
 use App\Services\Scenarios\ScenarioGraph;
 use App\Services\Scenarios\ScenarioInput;
@@ -32,6 +33,11 @@ class ScenarioController extends Controller
 
         return response()->json(['data' => $page->getCollection()->map(fn (Scenario|ScenarioVersion $model): array => $model->publicProfile())->all(),
             'meta' => ['pagination' => ['cursor' => $input['cursor'] ?? null, 'next_cursor' => $page->nextCursor()?->encode(), 'has_more' => $page->hasMorePages()]]])->header('Cache-Control', 'no-store');
+    }
+
+    public function catalog(): JsonResponse
+    {
+        return response()->json(['data' => app(AuthoringNodeCatalog::class)->describe()])->header('Cache-Control', 'no-store');
     }
 
     public function show(Request $request): JsonResponse

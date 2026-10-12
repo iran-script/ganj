@@ -6,6 +6,7 @@ use App\Exceptions\ApiException;
 use App\Models\GameSessionPlayer;
 use App\Models\RuntimeTimer;
 use App\Models\TeamNodeInstance;
+use App\Services\Scenarios\AuthoringNodeCatalog;
 use App\Services\Scenarios\NodeTypeRegistry;
 
 class RuntimeHandlers
@@ -13,7 +14,7 @@ class RuntimeHandlers
     /** @return array<string,string> */
     public static function handlers(): array
     {
-        return ['Start' => 'automatic', 'Finish' => 'acknowledge', 'Message' => 'acknowledge',
+        return array_fill_keys(array_keys(app(AuthoringNodeCatalog::class)->rules()), AuthoringRuntime::class) + ['Start' => 'automatic', 'Finish' => 'acknowledge', 'Message' => 'acknowledge',
             'Branch' => 'automatic', 'Condition' => 'automatic', 'Assign Roles' => 'automatic', 'Swap Roles' => 'automatic',
             'Split Team' => 'automatic', 'Relay' => 'relay', 'Random Player' => 'acknowledge', 'Specific Player' => 'acknowledge',
             'Puzzle' => 'answer', 'Password' => 'answer', 'Text Answer' => 'answer', 'Multiple Choice' => 'choice',

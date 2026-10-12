@@ -8,6 +8,7 @@ use App\Models\PlayerRoleAssignment;
 use App\Models\ScenarioCondition;
 use App\Models\TeamNodeInstance;
 use App\Models\TeamScenarioInstance;
+use App\Models\TeamScore;
 use App\Services\Scenarios\GraphValidator;
 use Carbon\CarbonImmutable;
 
@@ -57,13 +58,14 @@ class RuntimeConditions
         return hexdec(substr(hash_hmac('sha256', $context, $instance->random_seed), 0, 13)) / 4503599627370496;
     }
 
-    private function operand(TeamScenarioInstance $instance, string $operand, ?TeamNodeInstance $node, ?GameSessionPlayer $player): mixed
+    public function operand(TeamScenarioInstance $instance, string $operand, ?TeamNodeInstance $node, ?GameSessionPlayer $player): mixed
     {
         if (str_starts_with($operand, 'variables.')) {
             return $this->variables->read($instance, substr($operand, 10), $player, $node);
         }
 
         return match ($operand) {
+            'score' => (int) TeamScore::where('game_session_id', $instance->game_session_id)->where('team_id', $instance->game_session_team_id)->value('score'),
             'attempt_count' => $node?->attempt_count ?? 0,
             'team.member_count' => $instance->registration->players()->whereNotIn('participation_status', ['REMOVED', 'DISQUALIFIED'])->count(),
             'team.name' => $instance->registration->team->name,
