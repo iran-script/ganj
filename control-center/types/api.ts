@@ -27,8 +27,13 @@ export type Game = {
   id: string;
   title?: string;
   name?: string;
+  slug?: string;
+  description?: string | null;
+  default_timezone?: string;
   status?: string;
   pricing_type?: string;
+  pricing?: { mode?: 'FREE' | 'PAID'; amount?: number; currency?: string } | null;
+  scenario_version_id?: string | null;
   updated_at?: string;
   scenario?: { id: string; title?: string; status?: string } | null;
 };
