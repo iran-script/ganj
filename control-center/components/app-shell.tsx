@@ -9,6 +9,7 @@ import { queries } from '@/lib/queries';
 import { Button, ErrorState, LoadingState, SidebarLink } from '@/components/ui';
 
 const links: Array<[string, string, LucideIcon]> = [
+  ['/submissions', 'بررسی مدارک', FileText],
   ['/', 'داشبورد', LayoutDashboard], ['/games', 'بازی‌ها', Gamepad2], ['/sessions', 'جلسه‌ها', FileText], ['/live/demo', 'کنترل زنده', Activity], ['/teams', 'تیم‌ها', Users], ['/players', 'بازیکنان', ShieldCheck], ['/scenarios', 'سناریوها', Sparkles], ['/content', 'محتوا', Boxes], ['/reports', 'گزارش‌ها', BarChart3], ['/admin', 'مدیریت', Settings2],
 ];
 

@@ -2,9 +2,9 @@ import Link from 'next/link';
 import { Image, MapPin, MessageSquareText, QrCode } from 'lucide-react';
 import { PageHeader } from '@/components/ui';
 const cards = [
-  { href: '/control/content/checkpoints', title: 'نقاط مکانی', description: 'تعریف و مدیریت نقاط GPS و سیاست‌های مکانی.', icon: MapPin, tone: 'text-[var(--nexo-amber)]' },
-  { href: '/control/content/qr-triggers', title: 'تریگرهای QR', description: 'تولید شناسه‌های opaque و مدیریت وضعیت آن‌ها.', icon: QrCode, tone: 'text-[var(--nexo-info)]' },
-  { title: 'رسانه و دارایی‌ها', description: 'مدیریت فایل‌های مورد استفاده در پیام‌ها و سناریوها.', icon: Image, tone: 'text-[var(--nexo-muted)]', placeholder: true },
+  { href: '/control/content/locations', title: 'بانک مکان', description: 'تعریف و مدیریت نقاط GPS و سیاست‌های مکانی.', icon: MapPin, tone: 'text-[var(--nexo-amber)]' },
+  { href: '/control/content/qr-bank', title: 'بانک QR', description: 'مدیریت QRهای قابل استفاده مجدد و وضعیت آن‌ها.', icon: QrCode, tone: 'text-[var(--nexo-info)]' },
+  { href: '/control/content/media', title: 'رسانه و دارایی‌ها', description: 'مدیریت فایل‌های مورد استفاده در پیام‌ها و سناریوها.', icon: Image, tone: 'text-[var(--nexo-info)]' },
   { title: 'قالب پیام و معما', description: 'قالب‌های قابل استفاده مجدد؛ اتصال API در انتظار قرارداد محتواست.', icon: MessageSquareText, tone: 'text-[var(--nexo-muted)]', placeholder: true },
 ];
 
