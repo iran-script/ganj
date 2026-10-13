@@ -80,6 +80,7 @@ Route::prefix('v1')->group(function (): void {
         Route::patch('/scenarios/{scenario_id}', [ScenarioController::class, 'mutate'])->name('scenarios.update');
         Route::get('/scenarios/{scenario_id}/versions', [ScenarioController::class, 'index'])->name('scenarios.versions');
         Route::post('/scenarios/{scenario_id}/versions', [ScenarioController::class, 'mutate'])->name('scenarios.createVersion');
+        Route::post('/scenarios/{scenario_id}/draft', [ScenarioController::class, 'mutate'])->name('scenarios.ensureDraft');
         Route::get('/scenario-versions/{version_id}', [ScenarioController::class, 'show'])->name('scenarios.version');
         Route::patch('/scenario-versions/{version_id}', [ScenarioController::class, 'mutate'])->name('scenarios.updateVersion');
         Route::get('/scenario-versions/{version_id}/graph', [ScenarioController::class, 'show'])->name('scenarios.graph');

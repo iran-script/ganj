@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 #[Guarded(['*'])]
@@ -46,6 +47,7 @@ class ScenarioVersion extends Model
             'physical_effort' => $this->physical_effort, 'challenge_mix' => $this->challenge_mix,
             'published_at' => $this->published_at?->toISOString(),
             'published_by' => $this->published_by ? User::findOrFail($this->published_by)->public_id : null,
+            'usage_count' => DB::table('session_configuration_snapshots')->where('scenario_version_id', $this->id)->count(),
             'created_at' => $this->created_at?->toISOString(), 'updated_at' => $this->updated_at?->toISOString()];
     }
 }

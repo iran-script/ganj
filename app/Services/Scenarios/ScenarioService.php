@@ -33,7 +33,7 @@ class ScenarioService
                 $context = $this->organizations->resolve($actor, $input['organization_id'], true);
                 $context->authorize('update');
                 $scenario = (new Scenario)->forceFill(['organization_id' => $context->organization->id, 'created_by' => $actor->id])->setRelation('organization', $context->organization);
-            } elseif (in_array($action, ['update', 'archive', 'createVersion'], true)) {
+            } elseif (in_array($action, ['update', 'archive', 'createVersion', 'ensureDraft'], true)) {
                 $scenario = $this->scope->resolve($actor, $id ?? '', true);
             } else {
                 $version = $this->scope->version($actor, $id ?? '', true);
@@ -65,6 +65,7 @@ class ScenarioService
             $result = match ($action) {
                 'create','update' => $this->saveScenario($actor, $scenario, $input, $action),
                 'createVersion' => $this->createVersion($actor, $scenario, $input)->publicProfile(),
+                'ensureDraft' => $this->ensureDraft($actor, $scenario, $input)->publicProfile(),
                 'updateVersion' => $this->updateVersion($actor, $version, $input),
                 'saveGraph' => $this->saveGraph($actor, $version, $input),
                 'validate' => $this->validateVersion($actor, $version, $input),
@@ -118,6 +119,21 @@ class ScenarioService
     private function metadata(array $input): array
     {
         return array_intersect_key($input, array_flip(['difficulty', 'estimated_duration_seconds', 'estimated_distance_meters', 'physical_effort', 'challenge_mix']));
+    }
+
+    private function ensureDraft(User $actor, Scenario $scenario, array $input): ScenarioVersion
+    {
+        $draft = $scenario->versions()->where('status', 'DRAFT')->orderByDesc('version_no')->first();
+        if ($draft) {
+            return $draft;
+        }
+        $source = $scenario->versions()->where('status', 'PUBLISHED')->orderByDesc('version_no')->first();
+        if (! $source) {
+            return $this->createVersion($actor, $scenario, $input);
+        }
+        $copy = $this->duplicate($actor, $source, $input);
+
+        return ScenarioVersion::where('public_id', $copy['id'])->firstOrFail();
     }
 
     private function draft(ScenarioVersion $version): void
@@ -192,6 +208,7 @@ class ScenarioService
         $version->scenario->forceFill(['status' => 'PUBLISHED'])->save();
         $this->events->record('scenario_version.published.v1', $actor, $version->scenario, $version,
             ['published_by' => $actor->public_id, 'dependency_versions' => $graph['subflows'], 'asset_manifest_refs' => []], $input['reason'] ?? null);
+        $this->ensureDraft($actor, $version->scenario, $input);
 
         return $version->publicProfile();
     }

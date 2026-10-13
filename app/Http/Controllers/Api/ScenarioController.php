@@ -21,11 +21,11 @@ class ScenarioController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $input = ScenarioInput::validate($request->all(), 'index');
+        $input = ScenarioInput::validate($request->all(), $request->route('scenario_id') ? 'versionIndex' : 'index');
         if ($request->route('scenario_id')) {
             $scenario = $this->scope->resolve($request->user(), $request->route('scenario_id'));
             Gate::forUser($request->user())->authorize('view', $scenario);
-            $query = $scenario->versions();
+            $query = $scenario->versions()->orderByDesc('version_no');
         } else {
             $query = $this->scope->scenarios($request->user());
         }

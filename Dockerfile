@@ -19,6 +19,27 @@ USER www-data
 ENTRYPOINT ["nexo-entrypoint"]
 CMD ["php-fpm", "-F"]
 
+FROM node:22-alpine AS control-build
+WORKDIR /app
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_PUBLIC_API_BASE_URL=/api/v1
+ENV NODE_OPTIONS=--max-old-space-size=512
+COPY control-center/package.json control-center/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY control-center/ ./
+RUN npm run build
+
+FROM node:22-alpine AS production-control
+WORKDIR /app
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV HOSTNAME=0.0.0.0
+ENV PORT=3000
+COPY --from=control-build --chown=node:node /app/.next/standalone ./
+COPY --from=control-build --chown=node:node /app/.next/static ./.next/static
+USER node
+CMD ["node", "server.js"]
+
 FROM nginx:1.27-alpine AS production-nginx
 COPY public /var/www/html/public
 COPY docker/nginx-production.conf /etc/nginx/conf.d/default.conf

@@ -18,7 +18,7 @@ export function clearStoredToken(): void {
 
 const baseUrl = () => (process.env.NEXT_PUBLIC_API_BASE_URL ?? '').replace(/\/$/, '');
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, init: RequestInit = {}, unwrap = true): Promise<T> {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), init.body instanceof FormData ? 120_000 : 12_000);
   const headers = new Headers(init.headers);
@@ -35,7 +35,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       const error = body?.error ?? body;
       throw new ApiErrorResponse(response.status, error?.code ?? 'REQUEST_FAILED', error?.message ?? 'درخواست انجام نشد.', error?.details);
     }
-    return (payload && 'data' in payload ? payload.data : payload) as T;
+    return (unwrap && payload && 'data' in payload ? payload.data : payload) as T;
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
       throw new ApiErrorResponse(408, 'TIMEOUT', 'زمان پاسخ‌گویی سرور به پایان رسید.');

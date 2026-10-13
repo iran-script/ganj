@@ -91,7 +91,7 @@ class ScenarioApiTest extends TestCase
         $this->getJson('/api/v1/scenario-versions/'.$version->public_id.'/graph')->assertOk();
         $this->assertSame($before, app(ScenarioGraph::class)->read($version));
         $this->assertSame('ARCHIVED', $version->fresh()->status);
-        $this->assertDatabaseCount('scenario_nodes', 2);
+        $this->assertSame(2, DB::table('scenario_nodes')->where('scenario_version_id', $version->id)->count());
     }
 
     public static function forbiddenActors(): array

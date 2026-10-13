@@ -2,6 +2,10 @@
 .env
 vendor
 node_modules
+**/node_modules
+**/.next
+**/.env*
+**/tsconfig.tsbuildinfo
 storage/logs
 storage/framework
 tests

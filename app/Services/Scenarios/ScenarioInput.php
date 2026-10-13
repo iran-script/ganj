@@ -4,6 +4,7 @@ namespace App\Services\Scenarios;
 
 use App\Services\Teams\TeamInput;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class ScenarioInput
@@ -12,6 +13,21 @@ class ScenarioInput
     {
         if ($action === 'index') {
             return TeamInput::validate($input, 'index');
+        }
+        if ($action === 'versionIndex') {
+            $rules = TeamInput::rules('index');
+            self::fields($input, $rules);
+            $validated = Validator::make($input, $rules)->validate();
+            if (isset($validated['cursor'])) {
+                $cursor = json_decode(base64_decode(strtr($validated['cursor'], '-_', '+/'), true) ?: '', true);
+                if (! is_array($cursor) || count($cursor) !== 3 || ! is_bool($cursor['_pointsToNextItems'] ?? null)
+                    || ! is_string($cursor['public_id'] ?? null) || ! Str::isUuid($cursor['public_id'])
+                    || ! is_int($cursor['version_no'] ?? null) || $cursor['version_no'] < 1) {
+                    throw ValidationException::withMessages(['cursor' => 'The version cursor is invalid.']);
+                }
+            }
+
+            return $validated;
         }
         $reason = ['reason' => 'sometimes|nullable|string|max:1000'];
         $metadata = ['difficulty' => 'sometimes|nullable|string|max:100', 'estimated_duration_seconds' => 'sometimes|nullable|integer|min:1|max:2147483647',
@@ -26,7 +42,7 @@ class ScenarioInput
             'saveGraph' => $revision + ['nodes' => 'present|array|list|max:1000', 'edges' => 'present|array|list|max:5000', 'variables' => 'sometimes|array|list|max:500', 'conditions' => 'sometimes|array|list|max:2000', 'subflows' => 'sometimes|array|list|max:1000'] + $reason,
             'publish' => $revision + $reason,
             'validate','simulate' => ['revision_token' => 'sometimes|uuid'] + $reason,
-            'duplicate','archive','archiveVersion' => $reason,
+            'duplicate','archive','archiveVersion','ensureDraft' => $reason,
             'show','graph' => [],
             default => throw new \InvalidArgumentException('Unknown scenario action.'),
         };

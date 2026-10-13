@@ -17,6 +17,7 @@ use App\Services\Games\ScenarioAssignmentReadiness;
 use App\Services\Games\SessionService;
 use App\Services\Organizations\OperatorService;
 use App\Services\Organizations\OrganizationService;
+use App\Services\Scenarios\ScenarioGraph;
 use App\Services\Scenarios\ScenarioService;
 use App\Services\Teams\TeamService;
 use Illuminate\Database\QueryException;
@@ -124,6 +125,42 @@ class ProductionSessionDependenciesTest extends TestCase
         $this->assertDatabaseCount('session_configuration_snapshots', 1);
     }
 
+    public function test_running_session_keeps_v1_after_draft_edit_and_publish_while_new_session_uses_v2(): void
+    {
+        [$admin, $game, $session, $v1] = $this->configuredSession();
+        $sessions = app(SessionService::class);
+        $sessions->execute($admin, 'openRegistration', [], $session->public_id);
+        $team = $this->registerFixture($session);
+        $this->readyFixture($session);
+        $sessions->execute($admin, 'closeRegistration', [], $session->public_id);
+        $sessions->execute($admin, 'start', [], $session->public_id, key: 'version-one-start');
+        $instance = TeamScenarioInstance::where('game_session_id', $session->id)->sole();
+        $before = app(ScenarioGraph::class)->read($v1);
+        $v2 = $v1->scenario->versions()->where('status', 'DRAFT')->sole();
+        $changed = $before;
+        $changed['nodes'][1]['config']['text'] = 'Second published message';
+        app(ScenarioService::class)->execute($admin, 'saveGraph', $changed + ['revision_token' => $v2->revision_token], $v2->public_id);
+
+        $this->publishFixture($admin, $v2);
+        app(GameService::class)->execute($admin, 'update', ['scenario_version_id' => $v2->public_id], $game->public_id);
+
+        $this->assertSame('RUNNING', $session->fresh()->status);
+        $this->assertSame($v1->id, $instance->fresh()->scenario_version_id);
+        $this->assertSame($before, app(ScenarioGraph::class)->read($instance->version));
+        $player = $session->players()->where('user_id', $team->captain_user_id)->sole();
+        $this->authenticateGame($player->user, $player->device);
+        $this->getJson('/api/v1/game-sessions/'.$session->public_id.'/players/me/runtime')->assertOk()->assertJsonFragment(['scenario_version_id' => $v1->public_id]);
+        $newData = $sessions->execute($admin, 'create', ['game_id' => $game->public_id]);
+        $newSession = GameSession::where('public_id', $newData['id'])->sole();
+        $sessions->execute($admin, 'openRegistration', [], $newSession->public_id);
+        $this->registerFixture($newSession);
+        $this->readyFixture($newSession);
+        $sessions->execute($admin, 'closeRegistration', [], $newSession->public_id);
+        $sessions->execute($admin, 'start', [], $newSession->public_id, key: 'version-two-start');
+        $this->assertDatabaseHas('team_scenario_instances', ['game_session_id' => $newSession->id, 'scenario_version_id' => $v2->id]);
+        $this->assertSame($v1->id, $instance->fresh()->scenario_version_id);
+    }
+
     public function test_paid_pricing_is_resolved_but_unpaid_registration_is_blocked(): void
     {
         [$admin, , $session] = $this->configuredSession('PAID');
@@ -163,7 +200,7 @@ class ProductionSessionDependenciesTest extends TestCase
     public function test_draft_and_cross_tenant_scenarios_are_rejected_by_game_configuration(): void
     {
         [$admin, $game, , $version] = $this->configuredSession();
-        $draft = ScenarioVersion::factory()->create(['scenario_id' => $version->scenario_id, 'version_no' => 2]);
+        $draft = $version->scenario->versions()->where('status', 'DRAFT')->sole();
         $this->assertDomainError('SCENARIO_NOT_ASSIGNED', fn () => app(GameService::class)->execute($admin, 'update', ['scenario_version_id' => $draft->public_id], $game->public_id));
         [$otherAdmin, , $otherVersion] = $this->scenarioFixture();
         $this->publishFixture($otherAdmin, $otherVersion);
@@ -175,7 +212,7 @@ class ProductionSessionDependenciesTest extends TestCase
     {
         [$admin, $game, $session, $version] = $this->configuredSession();
         app(SessionService::class)->execute($admin, 'openRegistration', [], $session->public_id);
-        $newVersion = ScenarioVersion::factory()->create(['scenario_id' => $version->scenario_id, 'version_no' => 2]);
+        $newVersion = $version->scenario->versions()->where('status', 'DRAFT')->sole();
         app(ScenarioService::class)->execute($admin, 'saveGraph', $this->simpleGraph() + ['revision_token' => $newVersion->revision_token], $newVersion->public_id);
         $this->publishFixture($admin, $newVersion);
         app(GameService::class)->execute($admin, 'update', ['scenario_version_id' => $newVersion->public_id,

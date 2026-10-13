@@ -124,7 +124,7 @@ class ScenarioValidationTest extends TestCase
         $this->publishFixture($admin, $version);
         $copy = $service->execute($admin, 'duplicate', [], $version->public_id);
         $this->assertSame('DRAFT', $copy['status']);
-        $this->assertDatabaseCount('scenario_conditions', 2);
+        $this->assertDatabaseCount('scenario_conditions', 3);
     }
 
     public function test_structurally_invalid_save_rolls_back_graph_revision_and_events(): void

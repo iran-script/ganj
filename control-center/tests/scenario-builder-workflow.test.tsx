@@ -43,7 +43,7 @@ it('copies bank coordinates and policy into an independent GPS snapshot', async 
   await screen.findByRole('option', { name: 'Saved square' });
   fireEvent.change(screen.getByLabelText('انتخاب از نقاط ذخیره‌شده'), { target: { value: 'location' } });
   await userEvent.click(screen.getByRole('button', { name: 'اعمال تغییرات' }));
-  await userEvent.click(screen.getByRole('button', { name: 'ذخیره پیش‌نویس' }));
+  await userEvent.click(screen.getByRole('button', { name: 'ذخیره Draft' }));
   await waitFor(() => expect(scenarioApi.saveGraph).toHaveBeenCalled());
   const saved = vi.mocked(scenarioApi.saveGraph).mock.calls[0][1] as ScenarioGraphResponse['graph'];
   const config = saved.nodes.find((node) => node.node_key === 'gps')!.config;
@@ -57,7 +57,7 @@ it('searches the grouped palette and creates an advanced node', async () => {
   fireEvent.change(screen.getByLabelText('جستجوی گره'), { target: { value: 'Time' } });
   await userEvent.click(screen.getByRole('button', { name: 'زمان' }));
   expect(screen.getByLabelText('حالت زمان')).toHaveValue('DELAY');
-  await userEvent.click(screen.getByRole('button', { name: 'ذخیره پیش‌نویس' }));
+  await userEvent.click(screen.getByRole('button', { name: 'ذخیره Draft' }));
   await waitFor(() => expect(scenarioApi.saveGraph).toHaveBeenCalled());
   expect(vi.mocked(scenarioApi.saveGraph).mock.calls[0][1].nodes).toEqual(expect.arrayContaining([expect.objectContaining({ node_type: 'Time', config: { mode: 'DELAY', duration_seconds: 30 } })]));
 });
@@ -76,7 +76,7 @@ it('retains the saved QR selection when trigger options load after the inspector
   await screen.findByRole('option', { name: 'Saved trigger' });
   expect(screen.getByRole('combobox')).toHaveValue(triggerId);
   await user.click(screen.getByRole('button', { name: 'اعمال تغییرات' }));
-  await user.click(screen.getByRole('button', { name: 'ذخیره پیش‌نویس' }));
+  await user.click(screen.getByRole('button', { name: 'ذخیره Draft' }));
   await waitFor(() => expect(scenarioApi.saveGraph).toHaveBeenCalled());
   expect(vi.mocked(scenarioApi.saveGraph).mock.calls[0][1].nodes.at(-1)).toMatchObject({ config: { trigger_id: triggerId } });
 });
@@ -94,7 +94,7 @@ it('saves typed GPS coordinates and preserves existing policy and edge condition
   fireEvent.change(screen.getByLabelText('طول جغرافیایی'), { target: { value: '51.389' } });
   fireEvent.change(screen.getByLabelText('شعاع مجاز (متر)'), { target: { value: '25' } });
   await user.click(screen.getByRole('button', { name: 'اعمال تغییرات' }));
-  await user.click(screen.getByRole('button', { name: 'ذخیره پیش‌نویس' }));
+  await user.click(screen.getByRole('button', { name: 'ذخیره Draft' }));
   await waitFor(() => expect(scenarioApi.saveGraph).toHaveBeenCalled());
   const payload = vi.mocked(scenarioApi.saveGraph).mock.calls[0][1];
   expect(payload.nodes[1]).toMatchObject({ config: { latitude: 35.6892, longitude: 51.389, radius_m: 25, required_player_count: 2 } });
@@ -107,14 +107,14 @@ it('uses the saved revision for validation simulation and publish', async () => 
   await user.click(await screen.findByRole('button', { name: 'select start' }));
   await user.type(screen.getByLabelText('عنوان مرحله'), 'Updated');
   await user.click(screen.getByRole('button', { name: 'اعمال تغییرات' }));
-  expect(screen.getByRole('button', { name: 'انتشار' })).toBeDisabled();
-  await user.click(screen.getByRole('button', { name: 'ذخیره پیش‌نویس' }));
+  expect(screen.getByRole('button', { name: 'انتشار نسخه جدید' })).toBeDisabled();
+  await user.click(screen.getByRole('button', { name: 'ذخیره Draft' }));
   await screen.findByText('پیش‌نویس ذخیره شد.');
   await user.click(screen.getByRole('button', { name: 'اعتبارسنجی' }));
   await waitFor(() => expect(scenarioApi.validate).toHaveBeenCalledWith('version', 'saved-revision'));
   await user.click(screen.getByRole('button', { name: 'شبیه‌سازی' }));
   await waitFor(() => expect(scenarioApi.simulate).toHaveBeenCalledWith('version', 'saved-revision'));
-  await user.click(screen.getByRole('button', { name: 'انتشار' }));
+  await user.click(screen.getByRole('button', { name: 'انتشار نسخه جدید' }));
   await user.click(screen.getByRole('button', { name: 'انتشار نسخه' }));
   await waitFor(() => expect(scenarioApi.publish).toHaveBeenCalledWith('version', 'saved-revision'));
 });
@@ -136,7 +136,7 @@ it('keeps the GPS map and direct fields synchronized and saves an independent co
   fireEvent.change(screen.getByLabelText('عرض جغرافیایی'), { target: { value: '36.5' } });
   expect(screen.getByTestId('gps-map-state')).toHaveTextContent('"latitude":36.5');
   await userEvent.click(screen.getByRole('button', { name: 'اعمال تغییرات' }));
-  await userEvent.click(screen.getByRole('button', { name: 'ذخیره پیش‌نویس' }));
+  await userEvent.click(screen.getByRole('button', { name: 'ذخیره Draft' }));
   await waitFor(() => expect(scenarioApi.saveGraph).toHaveBeenCalled());
   expect((vi.mocked(scenarioApi.saveGraph).mock.calls[0][1] as ScenarioGraphResponse['graph']).nodes.find(node => node.node_key === 'gps')!.config).toMatchObject({ latitude: 36.5, longitude: 52.75, radius_m: 75 });
 });
@@ -149,4 +149,20 @@ it('keeps a published GPS map read-only', async () => {
   await userEvent.click(screen.getByRole('button', { name: 'انتخاب روی نقشه' }));
   expect(screen.getByRole('button', { name: 'test map move' })).toBeDisabled();
   expect(screen.getByLabelText('عرض جغرافیایی')).toBeDisabled();
+  expect(screen.queryByRole('button', { name: 'ذخیره Draft' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'انتشار نسخه جدید' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'اعمال تغییرات' })).not.toBeInTheDocument();
+  expect(screen.getByText(/Published · قفل‌شده/)).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'تاریخچه نسخه‌ها' })).toHaveAttribute('href', '/control/scenarios/scenario/versions');
+});
+
+it('selects the editable draft even when a published version is listed first', async () => {
+  vi.mocked(scenarioApi.versions).mockResolvedValue([
+    { id: 'published', status: 'PUBLISHED', version_no: 1 } as ScenarioVersion,
+    { id: 'version', status: 'DRAFT', version_no: 2 } as ScenarioVersion,
+  ]);
+  mountBuilder();
+  await screen.findByRole('button', { name: 'ذخیره Draft' });
+  expect(scenarioApi.version).toHaveBeenCalledWith('version');
+  expect(screen.getByText(/Draft · در حال ویرایش/)).toBeInTheDocument();
 });

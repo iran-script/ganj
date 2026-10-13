@@ -5,7 +5,7 @@ export type ScenarioNodeType = 'Start' | 'Message' | 'GPS / Location' | 'QR' | '
 export type ScenarioVariable = { key: string; type: 'STRING' | 'INTEGER' | 'BOOLEAN'; scope: 'TEAM'; default_value: string | number | boolean; writable: boolean };
 
 export type Scenario = { id: string; organization_id?: string; title: string; description?: string | null; theme?: string | null; status: ScenarioStatus; created_at?: string; updated_at?: string; archived_at?: string | null };
-export type ScenarioVersion = { id: string; scenario_id: string; version_no: number; status: ScenarioStatus; revision_token: string; difficulty?: string | null; estimated_duration_seconds?: number | null; estimated_distance_meters?: number | null; physical_effort?: string | null; published_at?: string | null; published_by?: string | null; created_at?: string; updated_at?: string };
+export type ScenarioVersion = { id: string; scenario_id: string; version_no: number; status: ScenarioStatus; revision_token: string; difficulty?: string | null; estimated_duration_seconds?: number | null; estimated_distance_meters?: number | null; physical_effort?: string | null; published_at?: string | null; published_by?: string | null; usage_count?: number; created_at?: string; updated_at?: string };
 export type ScenarioNode = { node_key: string; node_type: ScenarioNodeType; title?: string | null; config: Record<string, unknown>; position_x?: number | null; position_y?: number | null };
 export type ScenarioEdge = { edge_key: string; from_node: string; to_node: string; priority: number; condition_group_id?: string | null; metadata?: Record<string, unknown> };
 export type ScenarioGraph = { nodes: ScenarioNode[]; edges: ScenarioEdge[]; variables: unknown[]; conditions: unknown[]; subflows: unknown[] };
