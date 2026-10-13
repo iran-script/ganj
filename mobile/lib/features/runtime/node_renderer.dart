@@ -3,17 +3,22 @@ import 'package:flutter/material.dart';
 import '../../core/errors/api_error.dart';
 import '../location/location_page.dart';
 import '../qr/qr_scanner_page.dart';
+import 'media_reveal_card.dart';
+import 'evidence_card.dart';
 
 class NodeRenderer extends StatelessWidget {
   const NodeRenderer(
       {required this.node,
       required this.sessionId,
       required this.onSubmit,
+      this.onEvidenceChanged,
       super.key});
 
   final Map<String, dynamic> node;
   final String sessionId;
   final Future<void> Function(Map<String, dynamic>) onSubmit;
+
+  final Future<void> Function()? onEvidenceChanged;
 
   String get type => (node['node_type'] as String? ?? '').toUpperCase();
   Map<String, dynamic> get config =>
@@ -51,6 +56,20 @@ class NodeRenderer extends StatelessWidget {
                           onValue: (value) =>
                               onSubmit({'qr_token': value}))))));
     }
+    if (type == 'MEDIAREVEAL') {
+      return MediaRevealCard(
+          key: ValueKey(node['id']),
+          node: node,
+          onContinue: () => submitSafely(context, {'acknowledged': true}));
+    }
+    if (['PHOTOSUBMISSION', 'AUDIOSUBMISSION', 'FILESUBMISSION']
+        .contains(type)) {
+      return EvidenceCard(
+          key: ValueKey(node['id']),
+          node: node,
+          sessionId: sessionId,
+          onChanged: onEvidenceChanged);
+    }
     if (type.contains('GPS') || type == 'CHECKPOINT') {
       return Card(
           child: ListTile(
@@ -69,11 +88,13 @@ class NodeRenderer extends StatelessWidget {
           onSubmit: (value) => submitSafely(context, value),
           prompt: config['prompt'] as String? ?? 'پاسخ را وارد کنید.');
     }
-    if (type == 'TEAM TOGETHER' || type == 'BARRIER') {
+    if (['TEAM TOGETHER', 'TEAMTOGETHER', 'BARRIER', 'RELAY'].contains(type)) {
       return _ProgressCard(
           node: node, onSubmit: (value) => submitSafely(context, value));
     }
-    if (type == 'MESSAGE' || type == 'SHOW MESSAGE') {
+    if (type == 'MESSAGE' ||
+        type == 'SHOW MESSAGE' ||
+        type == 'SPLITINFORMATION') {
       return _AcknowledgeCard(
           text: config['text'] as String? ?? config['prompt'] as String? ?? '',
           onSubmit: (value) => submitSafely(context, value));
@@ -86,6 +107,34 @@ class NodeRenderer extends StatelessWidget {
     if (type == 'WAIT') {
       return const _UnavailableCard(
           title: 'این مرحله تا زمان مجاز منتظر می‌ماند.');
+    }
+    if (type == 'TIME') {
+      return config['mode'] == 'DELAY'
+          ? _UnavailableCard(
+              title:
+                  'در انتظار زمان سرور • ${config['duration_seconds']} ثانیه')
+          : _AcknowledgeCard(
+              text: config['mode'] == 'TIME_WINDOW'
+                  ? 'این مرحله فقط در بازه تعیین‌شده توسط سرور پذیرفته می‌شود.'
+                  : 'پیش از پایان مهلت سرور، ادامه را انتخاب کنید.',
+              onSubmit: (value) => submitSafely(context, value));
+    }
+    if (type == 'LIVECHALLENGE') {
+      return _AcknowledgeCard(
+          text: config['instruction'] as String? ??
+              'منتظر چالش GameMaster بمانید؛ پس از تکمیل چالش، ادامه را انتخاب کنید.',
+          onSubmit: (value) => submitSafely(context, value));
+    }
+    if ([
+      'CONDITION',
+      'SETVARIABLE',
+      'CHECKVARIABLE',
+      'SCORE',
+      'ROLECHECK',
+      'ASSIGNROLE',
+      'RANDOMPLAYER'
+    ].contains(type)) {
+      return const _UnavailableCard(title: 'در انتظار مرحله بعد از سرور');
     }
     return const _UnavailableCard(
         title: 'محتوای این مرحله در نسخه فعلی پشتیبانی نمی‌شود.');

@@ -17,6 +17,15 @@ rootProject.layout.buildDirectory.value(newBuildDir)
 
 // Compile Android plugins against the same installed API level as Flutter 3.47.
 subprojects {
+    // file_picker 11 assumes AGP 9 built-in Kotlin, which this Flutter project disables.
+    if (name == "file_picker" && providers.gradleProperty("android.builtInKotlin").orNull == "false") {
+        plugins.withId("com.android.library") {
+            apply(plugin = "org.jetbrains.kotlin.android")
+            extensions.configure<org.jetbrains.kotlin.gradle.dsl.KotlinAndroidProjectExtension> {
+                compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+            }
+        }
+    }
     afterEvaluate {
         extensions.findByType<com.android.build.gradle.BaseExtension>()?.apply {
             compileSdkVersion(36)

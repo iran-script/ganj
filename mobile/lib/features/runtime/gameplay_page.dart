@@ -219,6 +219,18 @@ class _GameplayPageState extends State<GameplayPage>
                                           textAlign: TextAlign.center),
                                       const SizedBox(height: 24),
                                     ] else if (node != null) ...[
+                                      for (final message
+                                          in data['private_messages']
+                                                  as List? ??
+                                              [])
+                                        Card(
+                                            child: Padding(
+                                                padding:
+                                                    const EdgeInsets.all(16),
+                                                child: Text(
+                                                    (message as Map)['text']
+                                                            as String? ??
+                                                        ''))),
                                       Text(brief ? 'شرح مأموریت' : 'هدف فعلی',
                                           style: const TextStyle(
                                               color: NexoTheme.amber)),
@@ -263,6 +275,7 @@ class _GameplayPageState extends State<GameplayPage>
                                                 key: ValueKey(node['id']),
                                                 node: node,
                                                 sessionId: widget.sessionId,
+                                                onEvidenceChanged: refresh,
                                                 onSubmit: (evidence) =>
                                                     submit(evidence, node))),
                                         if (sending)

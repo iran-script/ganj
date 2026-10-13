@@ -5,7 +5,11 @@
 	<key>CFBundleDisplayName</key>
 	<string>NEXO Player</string>
 	<key>NSCameraUsageDescription</key>
-	<string>برای اسکن کدهای بازی به دوربین نیاز است.</string>
+	<string>برای اسکن کدهای بازی و ثبت عکس مرحله به دوربین نیاز است.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>فقط هنگام ضبط مدرک صوتی مرحله به میکروفون نیاز است.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>برای انتخاب عکس مجاز مرحله از گالری استفاده می‌شود.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>برای بررسی موقعیت مرحله به مکان‌یابی هنگام استفاده نیاز است.</string>
 </dict>
