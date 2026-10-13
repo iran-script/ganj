@@ -1,10 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { canPublish, defaultScenarioConfig, hasValidEdgeReferences, nodeSummary } from '@/lib/scenario-builder-utils';
+import { canPublish, defaultScenarioConfig, hasValidEdgeReferences, nodeSummary, nodeValidation } from '@/lib/scenario-builder-utils';
 import type { ScenarioNode } from '@/types/scenario';
 
 const nodes: ScenarioNode[] = [{ node_key: 'start', node_type: 'Start', config: {} }, { node_key: 'finish', node_type: 'Finish', config: {} }];
 
 describe('scenario builder foundation', () => {
+  it('maps indexed, semantic, and edge validation paths without marking an invalid graph ready', () => {
+    const edges = [{ edge_key: 'route', from_node: 'start', to_node: 'finish', priority: 0 }];
+    const result = { status: 'FAIL' as const, errors: [{ code: 'BAD_CONFIG', path: 'nodes.0.config' }], warnings: [{ code: 'WARNING', path: 'nodes.finish' }] };
+    expect(nodeValidation('start', nodes, edges, result)).toBe('error');
+    expect(nodeValidation('finish', nodes, edges, result)).toBe('warning');
+    expect(nodeValidation('finish', nodes, edges, { ...result, warnings: [] })).toBeUndefined();
+    expect(nodeValidation('finish', nodes, edges, { ...result, errors: [{ code: 'INVALID_EDGE', path: 'edges.0.metadata.outcome' }] })).toBe('error');
+  });
+
   it('creates canonical starter configs without arbitrary fields', () => {
     expect(defaultScenarioConfig('Message')).toEqual({ text: '' });
     expect(defaultScenarioConfig('Puzzle')).toMatchObject({ case_sensitive: false, trim_whitespace: true });

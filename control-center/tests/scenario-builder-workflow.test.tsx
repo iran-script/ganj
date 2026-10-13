@@ -6,6 +6,7 @@ import type { ScenarioGraphResponse, ScenarioVersion } from '@/types/scenario';
 import { ScenarioBuilderScreen } from '@/components/scenario-builder';
 import { scenarioApi } from '@/lib/scenario-api';
 import { queries } from '@/lib/queries';
+import { contentApi } from '@/lib/content-api';
 
 vi.mock('@xyflow/react', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@xyflow/react')>();
@@ -13,6 +14,7 @@ vi.mock('@xyflow/react', async (importOriginal) => {
 });
 vi.mock('@/lib/scenario-api', () => ({ scenarioApi: { get: vi.fn(), versions: vi.fn(), version: vi.fn(), graph: vi.fn(), saveGraph: vi.fn(), validate: vi.fn(), publish: vi.fn(), simulate: vi.fn() } }));
 vi.mock('@/lib/queries', () => ({ queries: { qrTriggers: vi.fn(() => ({ queryKey: ['qr'], queryFn: async () => [] })), checkpoints: () => ({ queryKey: ['checkpoints'], queryFn: async () => [] }) } }));
+vi.mock('@/lib/content-api', () => ({ contentApi: { locations: vi.fn(async () => []), media: vi.fn(async () => []) } }));
 
 const validation = { status: 'PASS' as const, errors: [], warnings: [] };
 let graph: ScenarioGraphResponse;
@@ -33,6 +35,32 @@ beforeEach(() => {
   vi.mocked(scenarioApi.simulate).mockResolvedValue({ ...validation, mode: 'STRUCTURAL_ONLY', runtime_executed: false, revision_token: 'saved-revision', reachable_nodes: [], branches: [], dead_ends: [] });
 });
 afterEach(cleanup);
+
+it('copies bank coordinates and policy into an independent GPS snapshot', async () => {
+  vi.mocked(contentApi.locations).mockResolvedValue([{ id: 'location', organization_id: 'org', name: 'Saved square', latitude: 35.5, longitude: 51.5, default_radius_m: 30, accuracy_m: 5, dwell_seconds: 10, category: '', description: '', status: 'ACTIVE' }]);
+  mountBuilder();
+  await userEvent.click(await screen.findByRole('button', { name: 'select gps' }));
+  await screen.findByRole('option', { name: 'Saved square' });
+  fireEvent.change(screen.getByLabelText('انتخاب از نقاط ذخیره‌شده'), { target: { value: 'location' } });
+  await userEvent.click(screen.getByRole('button', { name: 'اعمال تغییرات' }));
+  await userEvent.click(screen.getByRole('button', { name: 'ذخیره پیش‌نویس' }));
+  await waitFor(() => expect(scenarioApi.saveGraph).toHaveBeenCalled());
+  const saved = vi.mocked(scenarioApi.saveGraph).mock.calls[0][1] as ScenarioGraphResponse['graph'];
+  const config = saved.nodes.find((node) => node.node_key === 'gps')!.config;
+  expect(config).toMatchObject({ latitude: 35.5, longitude: 51.5, radius_m: 30, accuracy_m: 5, dwell_seconds: 10 });
+  expect(config).not.toHaveProperty('checkpoint_id');
+});
+
+it('searches the grouped palette and creates an advanced node', async () => {
+  mountBuilder();
+  await screen.findByRole('button', { name: 'select start' });
+  fireEvent.change(screen.getByLabelText('جستجوی گره'), { target: { value: 'Time' } });
+  await userEvent.click(screen.getByRole('button', { name: 'زمان' }));
+  expect(screen.getByLabelText('حالت زمان')).toHaveValue('DELAY');
+  await userEvent.click(screen.getByRole('button', { name: 'ذخیره پیش‌نویس' }));
+  await waitFor(() => expect(scenarioApi.saveGraph).toHaveBeenCalled());
+  expect(vi.mocked(scenarioApi.saveGraph).mock.calls[0][1].nodes).toEqual(expect.arrayContaining([expect.objectContaining({ node_type: 'Time', config: { mode: 'DELAY', duration_seconds: 30 } })]));
+});
 
 it('retains the saved QR selection when trigger options load after the inspector opens', async () => {
   const user = userEvent.setup();

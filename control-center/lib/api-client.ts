@@ -20,10 +20,10 @@ const baseUrl = () => (process.env.NEXT_PUBLIC_API_BASE_URL ?? '').replace(/\/$/
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 12_000);
+  const timeout = window.setTimeout(() => controller.abort(), init.body instanceof FormData ? 120_000 : 12_000);
   const headers = new Headers(init.headers);
   headers.set('Accept', 'application/json');
-  if (init.body) headers.set('Content-Type', 'application/json');
+  if (init.body && !(init.body instanceof FormData)) headers.set('Content-Type', 'application/json');
   const token = getStoredToken();
   if (token) headers.set('Authorization', `Bearer ${token}`);
 
@@ -48,6 +48,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 type RequestOptions = { headers?: HeadersInit };
 
 export const api = {
+  upload: <T>(path: string, body: FormData) => request<T>(path, { method: 'POST', body }),
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown, options: RequestOptions = {}) => request<T>(path, { method: 'POST', body: body ? JSON.stringify(body) : undefined, headers: options.headers }),
   patch: <T>(path: string, body: unknown) => request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),

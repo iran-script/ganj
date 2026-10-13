@@ -1,4 +1,5 @@
 import { api } from '@/lib/api-client';
+import type { QrTrigger } from '@/types/resources';
 import type { ControlRoom, Device, Game, GameSession, Health, Organization, Team, TimelineEvent, User } from '@/types/api';
 
 export const queries = {
@@ -16,5 +17,5 @@ export const queries = {
   organizations: () => ({ queryKey: ['organizations'], queryFn: () => api.get<Organization[]>('/organizations') }),
   scenarios: () => ({ queryKey: ['scenarios'], queryFn: () => import('@/lib/scenario-api').then(({ scenarioApi }) => scenarioApi.list()) }),
   checkpoints: () => ({ queryKey: ['checkpoints'], queryFn: () => import('@/lib/resource-api').then(({ resourceApi }) => resourceApi.checkpoints()) }),
-  qrTriggers: () => ({ queryKey: ['qr-triggers'], queryFn: () => import('@/lib/resource-api').then(({ resourceApi }) => resourceApi.qrTriggers()) }),
+  qrTriggers: () => ({ queryKey: ['qr-triggers'], queryFn: (): Promise<QrTrigger[]> => import('@/lib/content-api').then(async ({ contentApi }) => (await contentApi.qr()).map((item) => ({ ...item, status: item.status as 'ACTIVE' | 'INACTIVE' | 'REVOKED', metadata: { label: item.name } }))) }),
 };
