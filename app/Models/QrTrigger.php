@@ -10,14 +10,14 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Str;
 
 #[Guarded(['*'])]
-#[Hidden(['id', 'organization_id', 'checkpoint_id', 'identifier_hash'])]
+#[Hidden(['id', 'organization_id', 'checkpoint_id', 'identifier_hash', 'printable_identity'])]
 class QrTrigger extends Model
 {
     use HasFactory;
 
     protected function casts(): array
     {
-        return ['metadata' => 'array'];
+        return ['metadata' => 'array', 'printable_identity' => 'encrypted'];
     }
 
     protected static function booted(): void

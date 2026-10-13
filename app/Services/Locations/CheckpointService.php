@@ -39,7 +39,8 @@ class CheckpointService
                 'type' => ($id ? 'sometimes' : 'required').'|in:POINT,ZONE',
                 'geom' => ($id ? 'sometimes' : 'required').'|array:type,coordinates', 'geom.type' => 'required_with:geom|in:Point,Polygon,MultiPolygon',
                 'geom.coordinates' => 'required_with:geom|array', 'radius_meters' => 'sometimes|nullable|numeric|min:0.01|max:100000',
-                'config' => 'sometimes|array', 'status' => 'sometimes|in:ACTIVE,INACTIVE,ARCHIVED']);
+                'config' => 'sometimes|array', 'metadata' => 'sometimes|array:category,description', 'metadata.category' => 'sometimes|string|max:100',
+                'metadata.description' => 'sometimes|string|max:2000', 'status' => 'sometimes|in:ACTIVE,INACTIVE,ARCHIVED']);
             $checkpoint = $id ? $this->resolve($actor, $id) : new Checkpoint;
             $organization = $id ? $checkpoint->organization->public_id : $input['organization_id'];
             $context = $this->scope->resolve($actor, $organization, true);
@@ -78,7 +79,7 @@ class CheckpointService
                 throw new ApiException('LOCATION_INVALID', 'Geometry does not match the checkpoint type.', [], 422);
             }
             $checkpoint->forceFill(['organization_id' => $context->organization->id, 'name' => $input['name'] ?? $checkpoint->name,
-                'type' => $type, 'radius_meters' => $radius, 'config' => $config, 'status' => $input['status'] ?? $checkpoint->status ?? 'ACTIVE']);
+                'type' => $type, 'radius_meters' => $radius, 'config' => $config, 'metadata' => $input['metadata'] ?? $checkpoint->metadata ?? [], 'status' => $input['status'] ?? $checkpoint->status ?? 'ACTIVE']);
             $checkpoint->geom = DB::raw('ST_SetSRID(ST_GeomFromGeoJSON('.DB::getPdo()->quote($geom).'),4326)');
             $checkpoint->save();
             $this->audit->record($id ? 'checkpoint.updated' : 'checkpoint.created', 'checkpoint', $checkpoint->public_id,

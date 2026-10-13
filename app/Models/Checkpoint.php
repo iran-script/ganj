@@ -27,7 +27,7 @@ class Checkpoint extends Model
 
     protected function casts(): array
     {
-        return ['config' => 'array', 'radius_meters' => 'float'];
+        return ['config' => 'array', 'metadata' => 'array', 'radius_meters' => 'float'];
     }
 
     public function organization(): BelongsTo

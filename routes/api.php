@@ -1,17 +1,20 @@
 <?php
 
 use App\Http\Controllers\Api\CheckpointController;
+use App\Http\Controllers\Api\ContentBankController;
 use App\Http\Controllers\Api\GameController;
 use App\Http\Controllers\Api\GameMasterController;
 use App\Http\Controllers\Api\GameSessionController;
 use App\Http\Controllers\Api\HealthController;
 use App\Http\Controllers\Api\IdentityController;
 use App\Http\Controllers\Api\LocationController;
+use App\Http\Controllers\Api\MediaController;
 use App\Http\Controllers\Api\OrganizationController;
 use App\Http\Controllers\Api\QrController;
 use App\Http\Controllers\Api\RuntimeController;
 use App\Http\Controllers\Api\ScenarioController;
 use App\Http\Controllers\Api\ScoringController;
+use App\Http\Controllers\Api\SubmissionController;
 use App\Http\Controllers\Api\TeamController;
 use App\Http\Middleware\AuthenticateIdentity;
 use Illuminate\Support\Facades\Route;
@@ -23,6 +26,24 @@ Route::prefix('v1')->group(function (): void {
     Route::post('/auth/register', [IdentityController::class, 'register'])->middleware('throttle:identity-register')->name('identity.register');
     Route::post('/auth/login', [IdentityController::class, 'login'])->middleware('throttle:identity-login')->name('identity.login');
     Route::middleware(AuthenticateIdentity::class)->group(function (): void {
+        Route::get('/content/locations', [ContentBankController::class, 'locations']);
+        Route::post('/content/locations', [ContentBankController::class, 'saveLocation']);
+        Route::get('/content/locations/{location_id}', [ContentBankController::class, 'showLocation']);
+        Route::patch('/content/locations/{location_id}', [ContentBankController::class, 'saveLocation']);
+        Route::get('/content/qr-bank', [ContentBankController::class, 'qrIndex']);
+        Route::post('/content/qr-bank', [ContentBankController::class, 'qrSave']);
+        Route::get('/content/qr-bank/{qr_id}', [ContentBankController::class, 'qrShow']);
+        Route::patch('/content/qr-bank/{qr_id}', [ContentBankController::class, 'qrSave']);
+        Route::get('/content/qr-bank/{qr_id}/printable', [ContentBankController::class, 'qrPrintable'])->whereUuid('qr_id');
+        Route::get('/content/media', [MediaController::class, 'index']);
+        Route::post('/content/media', [MediaController::class, 'create']);
+        Route::get('/content/media/{asset_id}/download', [MediaController::class, 'download']);
+        Route::get('/runtime/nodes/{node_instance_id}/media', [MediaController::class, 'runtime']);
+        Route::post('/runtime/nodes/{node_instance_id}/evidence', [SubmissionController::class, 'upload'])->middleware('throttle:runtime-submit');
+        Route::get('/submissions', [SubmissionController::class, 'index']);
+        Route::get('/submissions/{submission_id}', [SubmissionController::class, 'show']);
+        Route::post('/submissions/{submission_id}/review', [SubmissionController::class, 'review']);
+        Route::get('/submissions/{submission_id}/download', [SubmissionController::class, 'download']);
         Route::post('/locations', [LocationController::class, 'submit'])->middleware('throttle:location-submit')->name('locations.submit');
         Route::post('/locations/batch', [LocationController::class, 'submit'])->middleware('throttle:location-submit')->name('locations.batch');
         Route::get('/game-sessions/{session_id}/players/me/location-policy', [LocationController::class, 'policy'])->name('locations.policy');
@@ -53,6 +74,7 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/game-sessions/{session_id}/teams/{team_id}/'.$path, [RuntimeController::class, 'team'])->name('runtime.'.$action);
         }
         Route::get('/scenarios', [ScenarioController::class, 'index'])->name('scenarios.index');
+        Route::get('/scenario-node-catalog', [ScenarioController::class, 'catalog'])->name('scenarios.catalog');
         Route::post('/scenarios', [ScenarioController::class, 'mutate'])->name('scenarios.create');
         Route::get('/scenarios/{scenario_id}', [ScenarioController::class, 'show'])->name('scenarios.show');
         Route::patch('/scenarios/{scenario_id}', [ScenarioController::class, 'mutate'])->name('scenarios.update');

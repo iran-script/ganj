@@ -14,6 +14,10 @@ use App\Services\Games\GameScope;
 use App\Services\Idempotency\IdempotencyStore;
 use App\Services\Organizations\OrganizationScope;
 use App\Services\Runtime\RuntimeRoles;
+use BaconQrCode\Renderer\Image\SvgImageBackEnd;
+use BaconQrCode\Renderer\ImageRenderer;
+use BaconQrCode\Renderer\RendererStyle\RendererStyle;
+use BaconQrCode\Writer;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
@@ -70,6 +74,35 @@ class QrService
             'status' => 'ACTIVE', 'metadata' => $input['metadata'] ?? []])->save();
 
         return ['trigger' => ['id' => $trigger->public_id, 'status' => $trigger->status, 'metadata' => $trigger->metadata], 'identifier' => $raw];
+    }
+
+    public function provision(User $actor, array $input): array
+    {
+        return DB::transaction(function () use ($actor, $input): array {
+            $created = $this->create($actor, $input);
+            $trigger = QrTrigger::where('public_id', $created['trigger']['id'])->sole();
+            $trigger->forceFill(['printable_identity' => $created['identifier']])->save();
+            if (($input['status'] ?? 'ACTIVE') !== 'ACTIVE') {
+                $this->lifecycle($actor, $trigger->public_id, $input['status']);
+            }
+            $this->audit->record('qr.bank.provisioned', 'qr_trigger', $trigger->public_id, actorId: $actor->id, organizationId: $trigger->organization_id);
+
+            return $this->resolve($actor, $trigger->public_id);
+        });
+    }
+
+    public function printable(User $actor, string $id): string
+    {
+        $this->resolve($actor, $id);
+        $trigger = QrTrigger::where('public_id', $id)->sole();
+        if ($trigger->status !== 'ACTIVE' || ! $trigger->printable_identity) {
+            throw new ApiException('QR_PRINT_UNAVAILABLE', 'An active provisioned QR is required.', [], 409);
+        }
+        $writer = new Writer(new ImageRenderer(new RendererStyle(1024, 4), new SvgImageBackEnd));
+        $svg = $writer->writeString($trigger->printable_identity);
+        $this->audit->record('qr.bank.printed', 'qr_trigger', $id, actorId: $actor->id, organizationId: $trigger->organization_id);
+
+        return $svg;
     }
 
     public function lifecycle(User $actor, string $triggerId, string $status): array
