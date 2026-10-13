@@ -13,8 +13,8 @@ vi.mock('@xyflow/react', async (importOriginal) => {
   return { ...actual, ReactFlow: ({ nodes, onNodeClick }: { nodes: Array<{ id: string }>; onNodeClick: (event: null, node: { id: string }) => void }) => <div>{nodes.map((node) => <button key={node.id} onClick={() => onNodeClick(null, node)}>select {node.id}</button>)}</div> };
 });
 vi.mock('@/lib/scenario-api', () => ({ scenarioApi: { get: vi.fn(), versions: vi.fn(), version: vi.fn(), graph: vi.fn(), saveGraph: vi.fn(), validate: vi.fn(), publish: vi.fn(), simulate: vi.fn() } }));
-vi.mock('@/lib/queries', () => ({ queries: { qrTriggers: vi.fn(() => ({ queryKey: ['qr'], queryFn: async () => [] })), checkpoints: () => ({ queryKey: ['checkpoints'], queryFn: async () => [] }) } }));
-vi.mock('@/lib/content-api', () => ({ contentApi: { locations: vi.fn(async () => []), media: vi.fn(async () => []) } }));
+vi.mock('@/lib/queries', async (importOriginal) => ({ queries: { ...(await importOriginal<typeof import('@/lib/queries')>()).queries, checkpoints: () => ({ queryKey: ['checkpoints'], queryFn: async () => [] }) } }));
+vi.mock('@/lib/content-api', () => ({ contentApi: { qr: vi.fn(async () => []), locations: vi.fn(async () => []), media: vi.fn(async () => []) } }));
 
 const validation = { status: 'PASS' as const, errors: [], warnings: [] };
 let graph: ScenarioGraphResponse;
@@ -68,11 +68,11 @@ it('retains the saved QR selection when trigger options load after the inspector
   type Triggers = Awaited<ReturnType<ReturnType<typeof queries.qrTriggers>['queryFn']>>;
   let resolveTriggers!: (value: Triggers) => void;
   const response = new Promise<Triggers>((resolve) => { resolveTriggers = resolve; });
-  vi.mocked(queries.qrTriggers).mockReturnValue({ queryKey: ['qr'], queryFn: () => response });
+  vi.mocked(contentApi.qr).mockReturnValue(response);
   graph.graph.nodes.push({ node_key: 'qr', node_type: 'QR', config: { trigger_id: triggerId } });
   mountBuilder();
   await user.click(await screen.findByRole('button', { name: 'select qr' }));
-  resolveTriggers([{ id: triggerId, organization_id: 'organization', status: 'ACTIVE', metadata: { label: 'Saved trigger' } }]);
+  resolveTriggers([{ id: triggerId, organization_id: 'organization', status: 'ACTIVE', name: 'Saved trigger', label: 'Saved trigger', location_description: '', notes: '', usage_count: 0 }]);
   await screen.findByRole('option', { name: 'Saved trigger' });
   expect(screen.getByRole('combobox')).toHaveValue(triggerId);
   await user.click(screen.getByRole('button', { name: 'اعمال تغییرات' }));

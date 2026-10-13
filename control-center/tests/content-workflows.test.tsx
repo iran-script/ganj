@@ -11,7 +11,7 @@ import { api } from '@/lib/api-client';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock('@/lib/api-client', () => ({ api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), upload: vi.fn() } }));
-vi.mock('@/lib/queries', () => ({ queries: { organizations: () => ({ queryKey: ['organizations'], queryFn: async () => [{ id: 'org', name: 'Organization' }] }), sessions: () => ({ queryKey: ['sessions'], queryFn: async () => [{ id: 'session', title: 'Session' }] }) } }));
+vi.mock('@/lib/queries', async (importOriginal) => ({ queries: { ...(await importOriginal<typeof import('@/lib/queries')>()).queries, organizations: () => ({ queryKey: ['organizations'], queryFn: async () => [{ id: 'org', name: 'Organization' }] }), sessions: () => ({ queryKey: ['sessions'], queryFn: async () => [{ id: 'session', title: 'Session' }] }) } }));
 vi.mock('@/lib/content-api', () => ({ contentApi: { locations: vi.fn(), qr: vi.fn(), media: vi.fn(), submissions: vi.fn(), review: vi.fn() }, downloadContent: vi.fn() }));
 const asset = { id: 'asset', organization_id: 'org', name: 'Evidence', kind: 'FILE' as const, mime_type: 'application/pdf', size_bytes: 100 };
 beforeEach(() => {

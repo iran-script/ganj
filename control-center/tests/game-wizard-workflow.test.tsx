@@ -7,7 +7,7 @@ import { gameApi } from '@/lib/game-api';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ replace: vi.fn() }) }));
 vi.mock('@/lib/game-api', () => ({ gameApi: { create: vi.fn().mockResolvedValue({ id: 'game' }) } }));
-vi.mock('@/lib/queries', () => ({ queries: { organizations: () => ({ queryKey: ['organizations'], queryFn: async () => [{ id: 'a355c253-9c45-49c4-b8c1-383c265b80f1' }] }), scenarios: () => ({ queryKey: ['scenarios'], queryFn: async () => [] }) } }));
+vi.mock('@/lib/queries', async (importOriginal) => ({ queries: { ...(await importOriginal<typeof import('@/lib/queries')>()).queries, organizations: () => ({ queryKey: ['organizations'], queryFn: async () => [{ id: 'a355c253-9c45-49c4-b8c1-383c265b80f1' }] }), scenarios: () => ({ queryKey: ['scenarios'], queryFn: async () => [] }) } }));
 afterEach(cleanup);
 
 it('submits complete free pricing and an operational reason after review', async () => {

@@ -2,14 +2,13 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { gameApi } from '@/lib/game-api';
 import { normalizeApiError } from '@/lib/api-error';
 import { queries } from '@/lib/queries';
-import { scenarioApi } from '@/lib/scenario-api';
 import { Button, ErrorState, LoadingState, PageHeader } from '@/components/ui';
 import { FormSection, InlineNotice, ReviewRow, Stepper, ValidationSummary, WizardFooter } from '@/components/wizard';
 
@@ -18,6 +17,7 @@ type GameForm = z.infer<typeof schema>;
 
 export function GameWizard() {
   const router = useRouter();
+  const cache = useQueryClient();
   const [step, setStep] = useState(0);
   const [serverError, setServerError] = useState('');
   const gamesContext = useQuery(queries.organizations());
@@ -25,8 +25,8 @@ export function GameWizard() {
   const form = useForm<GameForm>({ resolver: zodResolver(schema), defaultValues: { default_timezone: 'Asia/Tehran', status: 'DRAFT', pricing_mode: 'FREE', currency: 'IRR' } });
   const selectedScenario = form.watch('scenario_id');
   const selectedVersion = form.watch('scenario_version_id');
-  const scenarioVersions = useQuery({ queryKey: ['scenario-versions-for-game', selectedScenario], queryFn: () => scenarioApi.versions(selectedScenario ?? ''), enabled: Boolean(selectedScenario) });
-  const mutation = useMutation({ mutationFn: (values: GameForm) => { const organization = gamesContext.data?.[0]; if (!organization) throw new Error('سازمان فعالی برای ثبت بازی پیدا نشد.'); return gameApi.create({ organization_id: organization.id, name: values.name, slug: values.slug, description: values.description, default_timezone: values.default_timezone, status: values.status, pricing: values.pricing_mode === 'FREE' ? { mode: 'FREE', amount: 0, currency: values.currency || 'IRR' } : { mode: 'PAID', amount: values.amount, currency: values.currency }, scenario_version_id: values.scenario_version_id || undefined, reason: 'Create game and configure pricing from Control Center' }); }, onSuccess: (game) => router.replace(`/control/games/${game.id}`), onError: (error) => setServerError(normalizeApiError(error).message) });
+  const scenarioVersions = useQuery({ ...queries.scenarioVersions(selectedScenario ?? ''), enabled: Boolean(selectedScenario) });
+  const mutation = useMutation({ mutationFn: (values: GameForm) => { const organization = gamesContext.data?.[0]; if (!organization) throw new Error('سازمان فعالی برای ثبت بازی پیدا نشد.'); return gameApi.create({ organization_id: organization.id, name: values.name, slug: values.slug, description: values.description, default_timezone: values.default_timezone, status: values.status, pricing: values.pricing_mode === 'FREE' ? { mode: 'FREE', amount: 0, currency: values.currency || 'IRR' } : { mode: 'PAID', amount: values.amount, currency: values.currency }, scenario_version_id: values.scenario_version_id || undefined, reason: 'Create game and configure pricing from Control Center' }); }, onSuccess: (game) => { void cache.invalidateQueries({ queryKey: ['games'] }); router.replace(`/control/games/${game.id}`); }, onError: (error) => setServerError(normalizeApiError(error).message) });
   if (gamesContext.isPending || scenarios.isPending) return <LoadingState label="در حال آماده‌سازی فرم بازی..." />;
   if (gamesContext.isError || scenarios.isError) return <ErrorState message="اطلاعات پایه فرم بازی در دسترس نیست." onRetry={() => { void gamesContext.refetch(); void scenarios.refetch(); }} />;
   const values = form.getValues();

@@ -31,7 +31,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const response = await fetch(`${baseUrl()}${path}`, { ...init, headers, signal: controller.signal });
     const payload = (response.status === 204 ? null : await response.json().catch(() => null)) as ApiEnvelope<T> | { message?: string; code?: string; details?: Record<string, unknown> } | null;
     if (!response.ok) {
-      const error = payload as { message?: string; code?: string; details?: Record<string, unknown> } | null;
+      const body = payload as { error?: { message?: string; code?: string; details?: Record<string, unknown> }; message?: string; code?: string; details?: Record<string, unknown> } | null;
+      const error = body?.error ?? body;
       throw new ApiErrorResponse(response.status, error?.code ?? 'REQUEST_FAILED', error?.message ?? 'درخواست انجام نشد.', error?.details);
     }
     return (payload && 'data' in payload ? payload.data : payload) as T;

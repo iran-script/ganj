@@ -1,3 +1,12 @@
-import Link from 'next/link';
-import { ScenarioBuilderScreen } from '@/components/scenario-builder';
-export default async function ScenarioDetailPage({ params }: { params: Promise<{ id: string }> }) { const { id } = await params; return <><div className="mb-5 flex items-center justify-between"><Link href={`/control/scenarios/${id}/versions`} className="text-sm text-[var(--nexo-muted)] hover:text-white">تاریخچه نسخه‌ها</Link><Link href={`/control/scenarios/${id}/builder`} className="rounded-lg bg-[var(--nexo-amber)] px-4 py-2 text-sm font-semibold text-[#17120b]">باز کردن Builder</Link></div><ScenarioBuilderScreen scenarioId={id} /></>; }
+'use client';
+import { use } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { queries } from '@/lib/queries';
+import { Button, ErrorState, LoadingState, PageHeader, StatusBadge } from '@/components/ui';
+export default function ScenarioDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
+  const scenario = useQuery(queries.scenario(id));
+  if (scenario.isPending) return <LoadingState />;
+  if (scenario.isError) return <ErrorState onRetry={() => void scenario.refetch()} />;
+  return <><PageHeader title={scenario.data.title} description={scenario.data.description ?? undefined} actions={<><Button href={`/control/scenarios/${id}/builder`}>باز کردن Builder</Button><Button href={`/control/scenarios/${id}/versions`} variant="secondary">تاریخچه نسخه‌ها</Button></>} /><section className="nexo-surface rounded-xl p-6"><StatusBadge status={scenario.data.status} /></section></>;
+}

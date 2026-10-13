@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { SecureMediaPreview } from '@/components/secure-media-preview';
+import dynamic from 'next/dynamic';
+const SecureMediaPreview = dynamic(() => import('@/components/secure-media-preview').then((module) => module.SecureMediaPreview), { loading: () => <LoadingState /> });
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api-client';
 import { queries } from '@/lib/queries';
