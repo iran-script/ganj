@@ -24,6 +24,7 @@ COPY public /var/www/html/public
 COPY docker/nginx-production.conf /etc/nginx/conf.d/default.conf
 
 FROM php:8.4-cli AS development
+RUN printf 'upload_max_filesize=25M\npost_max_size=26M\n' > /usr/local/etc/php/conf.d/nexo-uploads.ini
 RUN apt-get update && apt-get install -y libpq-dev libzip-dev unzip git && docker-php-ext-install pdo_pgsql pcntl && rm -rf /var/lib/apt/lists/*
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 WORKDIR /var/www/html
