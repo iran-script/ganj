@@ -46,3 +46,8 @@ a, button { -webkit-tap-highlight-color: transparent; }
 .nexo-grid { background-image: linear-gradient(rgb(255 255 255 / 2%) 1px, transparent 1px), linear-gradient(90deg, rgb(255 255 255 / 2%) 1px, transparent 1px); background-size: 32px 32px; }
 .scrollbar-thin::-webkit-scrollbar { width: 5px; height: 5px; }
 .scrollbar-thin::-webkit-scrollbar-thumb { background: #344456; border-radius: 999px; }
+
+/* Scoped map controls preserve conventional LTR map interaction. */
+.nexo-gis-map .ol-control button { min-width: 36px; min-height: 36px; background: #101923; color: #f0f4f8; }
+.nexo-gis-map .ol-attribution { font-size: 12px; color: #17212b; }
+.nexo-gis-map:focus-visible { outline: 2px solid var(--nexo-amber); }

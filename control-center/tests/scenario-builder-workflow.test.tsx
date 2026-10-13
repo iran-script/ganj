@@ -118,3 +118,35 @@ it('uses the saved revision for validation simulation and publish', async () => 
   await user.click(screen.getByRole('button', { name: 'انتشار نسخه' }));
   await waitFor(() => expect(scenarioApi.publish).toHaveBeenCalledWith('version', 'saved-revision'));
 });
+
+vi.mock('@/components/gis/lazy-map', () => ({ LazyMap: (props: import('@/components/gis/nexo-map').NexoMapProps) => <div><output data-testid="gps-map-state">{JSON.stringify(props.locations)}</output><button type="button" disabled={!props.editable} onClick={() => props.onMove?.({ latitude: 36.25, longitude: 52.75 })}>test map move</button></div> }));
+
+it('keeps the GPS map and direct fields synchronized and saves an independent config', async () => {
+  mountBuilder();
+  await userEvent.click(await screen.findByRole('button', { name: 'select gps' }));
+  await userEvent.click(screen.getByRole('button', { name: 'انتخاب روی نقشه' }));
+  expect(screen.getByTestId('gps-map-state')).toHaveTextContent('"latitude":35');
+  await userEvent.click(screen.getByRole('button', { name: 'test map move' }));
+  expect(screen.getByLabelText('عرض جغرافیایی')).toHaveValue(36.25);
+  expect(screen.getByLabelText('طول جغرافیایی')).toHaveValue(52.75);
+  fireEvent.change(screen.getByLabelText('شعاع مجاز (متر)'), { target: { value: '75' } });
+  expect(screen.getByTestId('gps-map-state')).toHaveTextContent('"radius_m":75');
+  fireEvent.change(screen.getByLabelText('عرض جغرافیایی'), { target: { value: '91' } });
+  expect(screen.getByTestId('gps-map-state')).toHaveTextContent('[]');
+  fireEvent.change(screen.getByLabelText('عرض جغرافیایی'), { target: { value: '36.5' } });
+  expect(screen.getByTestId('gps-map-state')).toHaveTextContent('"latitude":36.5');
+  await userEvent.click(screen.getByRole('button', { name: 'اعمال تغییرات' }));
+  await userEvent.click(screen.getByRole('button', { name: 'ذخیره پیش‌نویس' }));
+  await waitFor(() => expect(scenarioApi.saveGraph).toHaveBeenCalled());
+  expect((vi.mocked(scenarioApi.saveGraph).mock.calls[0][1] as ScenarioGraphResponse['graph']).nodes.find(node => node.node_key === 'gps')!.config).toMatchObject({ latitude: 36.5, longitude: 52.75, radius_m: 75 });
+});
+
+it('keeps a published GPS map read-only', async () => {
+  vi.mocked(scenarioApi.version).mockResolvedValue({ id: 'version', status: 'PUBLISHED', version_no: 1, revision_token: 'old-revision' } as ScenarioVersion);
+  vi.mocked(scenarioApi.versions).mockResolvedValue([{ id: 'version', status: 'PUBLISHED', version_no: 1, revision_token: 'old-revision' } as ScenarioVersion]);
+  mountBuilder();
+  await userEvent.click(await screen.findByRole('button', { name: 'select gps' }));
+  await userEvent.click(screen.getByRole('button', { name: 'انتخاب روی نقشه' }));
+  expect(screen.getByRole('button', { name: 'test map move' })).toBeDisabled();
+  expect(screen.getByLabelText('عرض جغرافیایی')).toBeDisabled();
+});

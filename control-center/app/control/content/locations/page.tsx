@@ -1,2 +1,2 @@
-import { ContentBank } from '@/components/content-bank';
-export default function Page() { return <ContentBank bank="locations" />; }
+import { LocationBank } from '@/components/gis/location-bank';
+export default function Page() { return <LocationBank />; }
