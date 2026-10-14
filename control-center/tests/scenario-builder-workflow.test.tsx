@@ -74,7 +74,7 @@ it('retains the saved QR selection when trigger options load after the inspector
   await user.click(await screen.findByRole('button', { name: 'select qr' }));
   resolveTriggers([{ id: triggerId, organization_id: 'organization', status: 'ACTIVE', name: 'Saved trigger', label: 'Saved trigger', location_description: '', notes: '', usage_count: 0 }]);
   await screen.findByRole('option', { name: 'Saved trigger' });
-  expect(screen.getByRole('combobox')).toHaveValue(triggerId);
+  expect(screen.getByRole('option', { name: 'Saved trigger' })).toHaveProperty('selected', true);
   await user.click(screen.getByRole('button', { name: 'اعمال تغییرات' }));
   await user.click(screen.getByRole('button', { name: 'ذخیره Draft' }));
   await waitFor(() => expect(scenarioApi.saveGraph).toHaveBeenCalled());
@@ -165,4 +165,22 @@ it('selects the editable draft even when a published version is listed first', a
   await screen.findByRole('button', { name: 'ذخیره Draft' });
   expect(scenarioApi.version).toHaveBeenCalledWith('version');
   expect(screen.getByText(/Draft · در حال ویرایش/)).toBeInTheDocument();
+});
+
+it('renders auto layout controls, marks the draft dirty, restores positions, and saves unchanged graph semantics', async () => {
+  mountBuilder();
+  await screen.findByRole('button', { name: 'select start' });
+  expect(screen.getByRole('button', { name: /مرتب‌سازی خودکار/ })).toBeInTheDocument();
+  expect(screen.getByRole('combobox', { name: 'جهت چیدمان' })).toHaveValue('TREE_VERTICAL');
+  await userEvent.selectOptions(screen.getByRole('combobox', { name: 'جهت چیدمان' }), 'TREE_HORIZONTAL');
+  await userEvent.click(screen.getByRole('button', { name: /مرتب‌سازی خودکار/ }));
+  expect(screen.getByText(/تغییرات ذخیره‌نشده/)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: /بازگردانی چیدمان قبلی/ }));
+  await userEvent.click(screen.getByRole('button', { name: /ذخیره Draft/ }));
+  await waitFor(() => expect(scenarioApi.saveGraph).toHaveBeenCalled());
+  const saved = vi.mocked(scenarioApi.saveGraph).mock.calls[0][1] as ScenarioGraphResponse['graph'];
+  expect(saved.nodes.map((node) => node.node_key)).toEqual(graph.graph.nodes.map((node) => node.node_key));
+  expect(saved.nodes.map((node) => node.config)).toEqual(graph.graph.nodes.map((node) => node.config));
+  expect(saved.edges).toHaveLength(graph.graph.edges.length);
+  expect(saved.edges[0]).toMatchObject(graph.graph.edges[0]);
 });
