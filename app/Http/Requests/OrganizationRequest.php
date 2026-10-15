@@ -30,14 +30,22 @@ class OrganizationRequest extends FormRequest
 
     public function rules(): array
     {
-        return OrganizationInput::rules($this->route()->getActionMethod());
+        return match ($this->route()->getActionMethod()) {
+            'adminAddMember' => OrganizationInput::rules('addMember') + ['reason' => ['required', 'string', 'min:3', 'max:1000']],
+            'adminRemoveMember' => ['reason' => ['required', 'string', 'min:3', 'max:1000']],
+            'changeMemberRole' => OrganizationInput::rules('changeRole'),
+            default => OrganizationInput::rules($this->route()->getActionMethod()),
+        };
     }
 
     public function after(): array
     {
         return [function (Validator $validator): void {
             if ($validator->errors()->isEmpty()) {
-                OrganizationInput::validate($this->all(), $this->route()->getActionMethod());
+                $action = match ($this->route()->getActionMethod()) {
+                    'adminAddMember' => 'addMember', 'adminRemoveMember' => 'removeMember', 'changeMemberRole' => 'changeRole', default => $this->route()->getActionMethod(),
+                };
+                OrganizationInput::validate($this->all(), $action);
             }
         }];
     }

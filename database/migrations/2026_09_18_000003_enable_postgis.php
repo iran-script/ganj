@@ -10,8 +10,6 @@ return new class extends Migration
         DB::statement('CREATE EXTENSION IF NOT EXISTS postgis');
     }
 
-    public function down(): void
-    {
-        DB::statement('DROP EXTENSION IF EXISTS postgis CASCADE');
-    }
+    /** PostGIS is a database prerequisite and must survive application migration rollbacks. */
+    public function down(): void {}
 };

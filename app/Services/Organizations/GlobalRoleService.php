@@ -37,7 +37,9 @@ class GlobalRoleService
     {
         return DB::transaction(function () use ($actor, $userId, $reason): RoleAssignment {
             DB::statement('LOCK TABLE role_assignments IN SHARE ROW EXCLUSIVE MODE');
-            Gate::forUser($actor)->authorize('roles.manageGlobal');
+            $lockedActor = User::query()->whereKey($actor->id)->lockForUpdate()->firstOrFail();
+            $lockedActor->ensureActive();
+            Gate::forUser($lockedActor)->authorize('roles.manageGlobal');
             OrganizationInput::validate(['reason' => $reason], 'archive');
             $target = $this->target($userId);
             $target->ensureActive();
@@ -54,15 +56,20 @@ class GlobalRoleService
     {
         DB::transaction(function () use ($actor, $userId, $reason): void {
             DB::statement('LOCK TABLE role_assignments IN SHARE ROW EXCLUSIVE MODE');
-            Gate::forUser($actor)->authorize('roles.manageGlobal');
+            $lockedActor = User::query()->whereKey($actor->id)->lockForUpdate()->firstOrFail();
+            $lockedActor->ensureActive();
+            Gate::forUser($lockedActor)->authorize('roles.manageGlobal');
             OrganizationInput::validate(['reason' => $reason], 'archive');
             $target = $this->target($userId);
             $assignment = $this->activeAssignment($target);
             if (! $assignment) {
                 throw $this->scope->notFound();
             }
+            if ($target->status === 'ACTIVE' && $this->activeSuperAdminCount() <= 1) {
+                throw new ApiException('ACTION_NOT_ALLOWED', 'The last active SUPER_ADMIN assignment cannot be revoked.', [], 409);
+            }
             $assignment->forceFill(['revoked_at' => now()])->save();
-            $this->audit->record('role_assignment.revoked', 'user', $target->public_id, $reason, ['role_code' => RoleAssignment::SUPER_ADMIN, 'scope' => 'GLOBAL'], $actor->id);
+            $this->audit->record('role_assignment.revoked', 'user', $target->public_id, $reason, ['role_code' => RoleAssignment::SUPER_ADMIN, 'scope' => 'GLOBAL'], $lockedActor->id);
         }, 3);
     }
 
@@ -77,7 +84,15 @@ class GlobalRoleService
 
     private function activeAssignment(User $user): ?RoleAssignment
     {
-        return RoleAssignment::query()->where('user_id', $user->id)->where('role_code', RoleAssignment::SUPER_ADMIN)->whereNull('revoked_at')->first();
+        return RoleAssignment::query()->where('user_id', $user->id)->where('role_code', RoleAssignment::SUPER_ADMIN)
+            ->whereNull('organization_id')->whereNull('resource_type')->whereNull('resource_id')->whereNull('revoked_at')->first();
+    }
+
+    private function activeSuperAdminCount(): int
+    {
+        return RoleAssignment::query()->where('role_code', RoleAssignment::SUPER_ADMIN)->whereNull('organization_id')
+            ->whereNull('resource_type')->whereNull('resource_id')->whereNull('revoked_at')
+            ->whereHas('user', fn ($query) => $query->where('status', 'ACTIVE'))->count();
     }
 
     private function recordGrant(?User $actor, User $target, string $reason): RoleAssignment

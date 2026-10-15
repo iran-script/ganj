@@ -3,6 +3,9 @@
 namespace App\Services\Teams;
 
 use App\Exceptions\ApiException;
+use App\Models\Game;
+use App\Models\GameSession;
+use App\Models\Organization;
 use App\Models\Team;
 use App\Models\TeamInvite;
 use App\Models\TeamMember;
@@ -60,7 +63,14 @@ class TeamService
         return DB::transaction(function () use ($actor, $action, $input, $teamId, $targetId, $idempotencyKey): ?array {
             $actor = User::query()->whereKey($actor->id)->lockForUpdate()->firstOrFail();
             $actor->ensureActive();
-            $team = $teamId === null ? null : $this->scope->lock($actor, $this->scope->resolve($actor, $teamId));
+            $team = null;
+            if ($teamId !== null) {
+                $resolvedTeam = $this->scope->resolve($actor, $teamId);
+                if ($action === 'archive') {
+                    $this->lockBlockingSessions($resolvedTeam);
+                }
+                $team = $this->scope->lock($actor, $resolvedTeam);
+            }
             $input = TeamInput::validate($input, $action);
             $key = null;
             $fingerprint = '';
@@ -235,6 +245,7 @@ class TeamService
                 $this->events->record('team.captain_changed.v1', $actor, $team, ['old_captain_user_id' => $oldCaptain, 'new_captain_user_id' => $member->user->public_id], $reason, $member->user);
                 break;
             case 'archive':
+                $this->ensureNoBlockingSessions($team);
                 $team->forceFill(['status' => 'ARCHIVED', 'archived_at' => now()])->save();
                 $this->events->record('team.archived.v1', $actor, $team, reason: $reason);
                 break;
@@ -263,6 +274,43 @@ class TeamService
     {
         if ($team->status !== 'ACTIVE' || ($team->organization_id !== null && $team->organization->status !== 'ACTIVE')) {
             throw new ApiException('STATE_TRANSITION_INVALID', 'The team or its organization is archived.', [], 409);
+        }
+    }
+
+    /** Lock sessions before the team, matching SessionService's session-then-team order. */
+    private function lockBlockingSessions(Team $team): void
+    {
+        if ($team->organization_id !== null) {
+            Organization::query()->whereKey($team->organization_id)->lockForUpdate()->firstOrFail();
+        }
+        $relations = DB::table('game_session_teams')->join('game_sessions', 'game_sessions.id', '=', 'game_session_teams.game_session_id')
+            ->where('game_session_teams.team_id', $team->id)
+            ->select(['game_sessions.organization_id', 'game_sessions.game_id', 'game_sessions.id'])->distinct()->orderBy('game_sessions.organization_id')
+            ->get();
+        $organizationIds = $relations->pluck('organization_id')->unique()->sort()->values();
+        $gameIds = $relations->pluck('game_id')->unique()->sort()->values();
+        $sessionIds = $relations->pluck('id')->unique()->sort()->values();
+
+        if ($organizationIds->isNotEmpty()) {
+            Organization::query()->whereIn('id', $organizationIds)->orderBy('id')->lockForUpdate()->get(['id']);
+        }
+        if ($gameIds->isNotEmpty()) {
+            Game::query()->whereIn('id', $gameIds)->orderBy('id')->lockForUpdate()->get(['id']);
+        }
+        if ($sessionIds->isNotEmpty()) {
+            GameSession::query()->whereIn('id', $sessionIds)->orderBy('id')->lockForUpdate()->get(['id']);
+        }
+    }
+
+    private function ensureNoBlockingSessions(Team $team): void
+    {
+        $hasBlockingSession = GameSession::query()
+            ->whereIn('status', ['REGISTRATION', 'READY', 'RUNNING', 'PAUSED'])
+            ->whereHas('teams', fn (Builder $query): Builder => $query->where('team_id', $team->id))
+            ->exists();
+
+        if ($hasBlockingSession) {
+            throw new ApiException('STATE_TRANSITION_INVALID', 'A team associated with an active or pending session cannot be archived.', [], 409);
         }
     }
 }

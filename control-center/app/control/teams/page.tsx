@@ -1,5 +1,5 @@
-import { TeamsPage } from '@/components/teams-module';
+import { TeamManagementPage } from '@/components/team-management';
 
 export default function TeamsRoute() {
-  return <TeamsPage />;
+  return <TeamManagementPage />;
 }

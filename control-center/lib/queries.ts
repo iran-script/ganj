@@ -3,10 +3,12 @@ import { queryPolicy } from '@/lib/query';
 import { contentApi } from '@/lib/content-api';
 import { scenarioApi } from '@/lib/scenario-api';
 import type { QrTrigger } from '@/types/resources';
+import { managementApi } from '@/lib/management-api';
 import type { ControlRoom, Device, Game, GameSession, Health, Organization, Team, TimelineEvent, User } from '@/types/api';
 
 export const queries = {
   me: () => ({ ...queryPolicy.identity, queryKey: ['me'], queryFn: () => api.get<User>('/me') }),
+  capabilities: () => ({ queryKey: ['me', 'capabilities'], queryFn: managementApi.capabilities, retry: false }),
   health: () => ({ ...queryPolicy.health, queryKey: ['health'], queryFn: () => api.get<Health>('/health') }),
   games: () => ({ queryKey: ['games'], queryFn: () => api.get<Game[]>('/games') }),
   game: (id: string) => ({ queryKey: ['games', id], queryFn: () => api.get<Game>(`/games/${id}`) }),

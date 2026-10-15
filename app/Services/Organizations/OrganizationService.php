@@ -43,9 +43,19 @@ class OrganizationService
         $context->authorize('manageMembers');
         $input = OrganizationInput::validate($input, 'members');
 
-        return $context->scope(OrganizationMember::query())->where('organization_members.status', OrganizationMemberStatus::Active->value)
+        $query = $context->scope(OrganizationMember::query())->where('organization_members.status', OrganizationMemberStatus::Active->value)
             ->join('users', 'users.id', '=', 'organization_members.user_id')->select('organization_members.*', 'users.public_id as cursor_user_id')
-            ->with('user')->orderBy('cursor_user_id')->cursorPaginate($input['limit'] ?? 25, ['*'], 'cursor', $input['cursor'] ?? null);
+            ->with('user');
+        if (isset($input['role'])) {
+            $query->whereIn('organization_members.role', explode(',', $input['role']));
+        }
+        if (! empty($input['q'])) {
+            $needle = '%'.str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], trim($input['q'])).'%';
+            $query->where(fn ($search) => $search->whereRaw('lower(users.name) LIKE lower(?)', [$needle])
+                ->orWhereRaw('lower(users.email) LIKE lower(?)', [$needle])->orWhere('users.mobile', 'LIKE', $needle));
+        }
+
+        return $query->orderBy('cursor_user_id')->cursorPaginate($input['limit'] ?? 25, ['*'], 'cursor', $input['cursor'] ?? null);
     }
 
     public function create(User $actor, array $input): Organization

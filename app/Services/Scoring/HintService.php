@@ -82,7 +82,7 @@ class HintService
 
     public function list(User $actor, string $sessionId, string $teamId): array
     {
-        $session = $this->scope->resolve($actor, $sessionId);
+        $session = $this->scope->resolve($actor, $sessionId, true);
         $registration = $session->teams()->whereHas('team', fn ($query) => $query->where('public_id', $teamId))->first();
         if (! $registration) {
             throw new ApiException('RESOURCE_NOT_FOUND', 'The requested Team was not found.', [], 404);

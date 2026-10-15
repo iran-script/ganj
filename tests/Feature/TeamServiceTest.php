@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Exceptions\ApiException;
+use App\Models\GameSession;
+use App\Models\GameSessionTeam;
 use App\Models\Organization;
 use App\Models\OrganizationMember;
 use App\Models\RoleAssignment;
@@ -220,6 +222,43 @@ class TeamServiceTest extends TestCase
         }
         app(TeamService::class)->execute($admin, 'archive', ['reason' => 'Owner recovery'], $team->public_id);
         $this->assertDatabaseHas('audit_events', ['actor_id' => $admin->id, 'action' => 'team.archived.v1', 'reason' => 'Owner recovery']);
+    }
+
+    public static function blockingSessionStates(): array
+    {
+        return [['REGISTRATION'], ['READY'], ['RUNNING'], ['PAUSED']];
+    }
+
+    #[DataProvider('blockingSessionStates')]
+    public function test_team_archive_is_rejected_while_associated_session_is_active_or_pending(string $status): void
+    {
+        $team = Team::factory()->create();
+        $session = GameSession::factory()->create(['status' => $status]);
+        GameSessionTeam::factory()->create(['team_id' => $team->id, 'game_session_id' => $session->id]);
+        $admin = RoleAssignment::factory()->create()->user;
+
+        try {
+            app(TeamService::class)->execute($admin, 'archive', ['reason' => 'Retire inactive team'], $team->public_id);
+            $this->fail('A team linked to an active or pending session cannot be archived.');
+        } catch (ApiException $exception) {
+            $this->assertSame('STATE_TRANSITION_INVALID', $exception->errorCode);
+        }
+
+        $this->assertSame('ACTIVE', $team->fresh()->status);
+        $this->assertDatabaseMissing('audit_events', ['action' => 'team.archived.v1']);
+    }
+
+    public function test_team_archive_remains_available_after_associated_session_is_terminal(): void
+    {
+        $team = Team::factory()->create();
+        $session = GameSession::factory()->create(['status' => 'FINISHED']);
+        GameSessionTeam::factory()->create(['team_id' => $team->id, 'game_session_id' => $session->id]);
+        $admin = RoleAssignment::factory()->create()->user;
+
+        app(TeamService::class)->execute($admin, 'archive', ['reason' => 'Retire completed team'], $team->public_id);
+
+        $this->assertSame('ARCHIVED', $team->fresh()->status);
+        $this->assertDatabaseHas('audit_events', ['actor_id' => $admin->id, 'action' => 'team.archived.v1', 'reason' => 'Retire completed team']);
     }
 
     public function test_audit_failure_rolls_back_team_membership_and_outbox(): void

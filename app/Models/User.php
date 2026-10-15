@@ -44,6 +44,26 @@ class User extends Authenticatable
         return $this->hasMany(UserDevice::class);
     }
 
+    public function globalRoleAssignments(): HasMany
+    {
+        return $this->hasMany(RoleAssignment::class);
+    }
+
+    public function organizationMemberships(): HasMany
+    {
+        return $this->hasMany(OrganizationMember::class);
+    }
+
+    public function teamMemberships(): HasMany
+    {
+        return $this->hasMany(TeamMember::class);
+    }
+
+    public function gameSessionParticipations(): HasMany
+    {
+        return $this->hasMany(GameSessionPlayer::class);
+    }
+
     public function ensureActive(): void
     {
         if ($this->status !== UserStatus::Active->value) {

@@ -6,6 +6,7 @@ use App\Enums\UserStatus;
 use App\Models\Game;
 use App\Models\GameSession;
 use App\Models\Organization;
+use App\Models\RoleAssignment;
 use App\Models\Scenario;
 use App\Models\Team;
 use App\Models\User;
@@ -68,6 +69,19 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(Game::class, GamePolicy::class);
         Gate::policy(GameSession::class, GameSessionPolicy::class);
         Gate::define('roles.manageGlobal', fn (User $user): bool => app(OrganizationScope::class)->isSuperAdmin($user));
+        Gate::define('admin.users.view', fn (User $user): bool => app(OrganizationScope::class)->isSuperAdmin($user));
+        Gate::define('admin.users.status', fn (User $user): bool => app(OrganizationScope::class)->isSuperAdmin($user));
+        Gate::define('admin.roles.view', fn (User $user): bool => app(OrganizationScope::class)->isSuperAdmin($user));
+        Gate::define('admin.players.view', function (User $user): bool {
+            if (app(OrganizationScope::class)->isSuperAdmin($user)) {
+                return true;
+            }
+            if (app(OrganizationScope::class)->organizations($user, true)->exists()) {
+                return true;
+            }
+
+            return RoleAssignment::query()->where('user_id', $user->id)->where('role_code', 'GAMEMASTER')->whereNull('revoked_at')->exists();
+        });
         foreach (['user.read_self', 'user.update_self', 'device.list_self', 'device.revoke_self'] as $ability) {
             Gate::define($ability, fn (User $user): bool => $user->status === UserStatus::Active->value);
         }
@@ -77,6 +91,7 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('location-submit', fn (Request $request) => Limit::perMinute(config('location.rate_per_minute'))->by((string) $request->user()?->id));
         RateLimiter::for('runtime-submit', fn (Request $request) => Limit::perMinute(120)->by((string) $request->user()?->id));
         RateLimiter::for('qr-scan', fn (Request $request) => Limit::perMinute(120)->by((string) $request->user()?->id.':'.($request->header('X-Device-Id') ?? 'missing')));
+        RateLimiter::for('admin-sensitive', fn (Request $request) => Limit::perMinute(30)->by((string) $request->user()?->id));
         Event::listen(JobProcessed::class, function (): void {
             try {
                 Redis::connection()->setex('phase0:queue-worker-heartbeat', 120, (string) now()->timestamp);

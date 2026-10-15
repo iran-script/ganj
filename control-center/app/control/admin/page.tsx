@@ -1,13 +1,11 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { ClipboardList, Database, KeyRound, MonitorSmartphone, ServerCog, UsersRound, type LucideIcon } from 'lucide-react';
+import { ClipboardList, Database, MonitorSmartphone, ServerCog, type LucideIcon } from 'lucide-react';
 import { queries } from '@/lib/queries';
 import { EmptyState, ErrorState, HealthIndicator, LoadingState, PageHeader, SectionHeader, StatusBadge } from '@/components/ui';
 
 const modules: Array<[string, string, LucideIcon]> = [
-  ['کاربران و اپراتورها', 'فهرست کاربران و وضعیت دسترسی سازمانی', UsersRound],
-  ['نقش‌ها و مجوزها', 'نمایش مجوزهای backend؛ تغییرات از طریق API مجاز انجام می‌شود', KeyRound],
   ['دستگاه‌ها', 'شناسه، آخرین مشاهده و آمادگی دستگاه‌ها', MonitorSmartphone],
   ['گزارش حسابرسی', 'خط زمانی actor، action و entity', ClipboardList],
 ];

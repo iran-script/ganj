@@ -24,7 +24,8 @@ class OrganizationInput
             'removeMember' => ['reason' => $reason],
             'changeRole' => ['role' => ['required', Rule::enum(OrganizationRole::class)], 'reason' => ['required', 'string', 'max:1000']],
             'archive' => ['reason' => ['required', 'string', 'max:1000']],
-            'index', 'members' => ['limit' => ['sometimes', 'integer', 'min:1', 'max:100'], 'cursor' => ['sometimes', 'nullable', 'string', 'max:512']],
+            'index' => ['limit' => ['sometimes', 'integer', 'min:1', 'max:100'], 'cursor' => ['sometimes', 'nullable', 'string', 'max:512']],
+            'members' => ['limit' => ['sometimes', 'integer', 'min:1', 'max:100'], 'cursor' => ['sometimes', 'nullable', 'string', 'max:512'], 'q' => ['sometimes', 'nullable', 'string', 'max:255'], 'role' => ['sometimes', 'string', 'regex:/^(ORGANIZATION_ADMIN|GAMEMASTER|STAFF)(,(ORGANIZATION_ADMIN|GAMEMASTER|STAFF))*$/']],
             default => [],
         };
     }

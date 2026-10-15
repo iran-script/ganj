@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 #[Guarded(['*'])]
 #[Hidden(['id', 'game_session_id', 'game_session_team_id', 'game_session_player_id', 'team_id', 'user_id', 'active_device_id', 'device_id', 'actor_id', 'scenario_assignment_id'])]
@@ -33,5 +34,10 @@ class GameSessionTeam extends Model
     public function players(): HasMany
     {
         return $this->hasMany(GameSessionPlayer::class);
+    }
+
+    public function score(): HasOne
+    {
+        return $this->hasOne(TeamScore::class, 'team_id');
     }
 }

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AdminManagementController;
 use App\Http\Controllers\Api\CheckpointController;
 use App\Http\Controllers\Api\ContentBankController;
 use App\Http\Controllers\Api\GameController;
@@ -10,6 +11,7 @@ use App\Http\Controllers\Api\IdentityController;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\MediaController;
 use App\Http\Controllers\Api\OrganizationController;
+use App\Http\Controllers\Api\PlayerManagementController;
 use App\Http\Controllers\Api\QrController;
 use App\Http\Controllers\Api\RuntimeController;
 use App\Http\Controllers\Api\ScenarioController;
@@ -26,6 +28,21 @@ Route::prefix('v1')->group(function (): void {
     Route::post('/auth/register', [IdentityController::class, 'register'])->middleware('throttle:identity-register')->name('identity.register');
     Route::post('/auth/login', [IdentityController::class, 'login'])->middleware('throttle:identity-login')->name('identity.login');
     Route::middleware(AuthenticateIdentity::class)->group(function (): void {
+        Route::get('/me/capabilities', [AdminManagementController::class, 'capabilities'])->name('identity.capabilities');
+        Route::middleware('throttle:admin-sensitive')->prefix('admin')->name('admin.')->group(function (): void {
+            Route::get('/users', [AdminManagementController::class, 'users'])->name('users.index');
+            Route::get('/users/{user_id}', [AdminManagementController::class, 'user'])->whereUuid('user_id')->name('users.show');
+            Route::patch('/users/{user_id}/status', [AdminManagementController::class, 'setStatus'])->whereUuid('user_id')->name('users.status');
+            Route::get('/admins', [AdminManagementController::class, 'administrators'])->name('admins.index');
+            Route::post('/admins/{user_id}', [AdminManagementController::class, 'grantAdministrator'])->whereUuid('user_id')->name('admins.grant');
+            Route::delete('/admins/{user_id}', [AdminManagementController::class, 'revokeAdministrator'])->whereUuid('user_id')->name('admins.revoke');
+            Route::get('/roles', [AdminManagementController::class, 'roles'])->name('roles.index');
+            Route::get('/players', [PlayerManagementController::class, 'index'])->name('players.index');
+            Route::get('/players/{user_id}', [PlayerManagementController::class, 'show'])->whereUuid('user_id')->name('players.show');
+            Route::patch('/organizations/{organization_id}/members/{user_id}/role', [OrganizationController::class, 'changeMemberRole'])->whereUuid('organization_id')->whereUuid('user_id')->name('organizations.members.role');
+            Route::post('/organizations/{organization_id}/members', [OrganizationController::class, 'adminAddMember'])->whereUuid('organization_id')->name('organizations.members.add');
+            Route::delete('/organizations/{organization_id}/members/{user_id}', [OrganizationController::class, 'adminRemoveMember'])->whereUuid('organization_id')->whereUuid('user_id')->name('organizations.members.remove');
+        });
         Route::get('/content/locations', [ContentBankController::class, 'locations']);
         Route::post('/content/locations', [ContentBankController::class, 'saveLocation']);
         Route::get('/content/locations/{location_id}', [ContentBankController::class, 'showLocation']);

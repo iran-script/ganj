@@ -14,7 +14,7 @@ class LeaderboardService
 
     public function show(User $actor, string $sessionId): array
     {
-        $session = $this->scope->resolve($actor, $sessionId);
+        $session = $this->scope->resolve($actor, $sessionId, true);
         $scores = TeamScore::where('game_session_id', $session->id)->with('team.team')->get()
             ->sortBy([['score', 'desc'], ['effective_elapsed_seconds', 'asc'], ['hints_used', 'asc'], ['finished_at', 'asc'], ['team_id', 'asc']])->values();
         $playerTeamIds = $session->players()->where('user_id', $actor->id)->pluck('game_session_team_id');
@@ -50,7 +50,7 @@ class LeaderboardService
 
     public function team(User $actor, string $sessionId, string $teamId): array
     {
-        $session = $this->scope->resolve($actor, $sessionId);
+        $session = $this->scope->resolve($actor, $sessionId, true);
         $registration = $session->teams()->whereHas('team', fn ($query) => $query->where('public_id', $teamId))->first();
         if (! $registration) {
             throw new ApiException('RESOURCE_NOT_FOUND', 'The requested Team was not found.', [], 404);
@@ -70,7 +70,7 @@ class LeaderboardService
 
     public function events(User $actor, string $sessionId, string $teamId): array
     {
-        $session = $this->scope->resolve($actor, $sessionId);
+        $session = $this->scope->resolve($actor, $sessionId, true);
         $registration = $session->teams()->whereHas('team', fn ($query) => $query->where('public_id', $teamId))->first();
         if (! $registration) {
             throw new ApiException('RESOURCE_NOT_FOUND', 'The requested Team was not found.', [], 404);

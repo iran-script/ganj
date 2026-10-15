@@ -1,0 +1,59 @@
+<?php
+
+namespace App\Http\Requests;
+
+use App\Enums\UserStatus;
+use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
+use Illuminate\Validation\Validator;
+
+class AdminManagementRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    public function rules(): array
+    {
+        return match ($this->route()->getActionMethod()) {
+            'setStatus' => ['status' => ['required', Rule::enum(UserStatus::class)], 'reason' => ['required', 'string', 'min:3', 'max:1000']],
+            'grantAdministrator', 'revokeAdministrator' => ['reason' => ['required', 'string', 'min:3', 'max:1000']],
+            'users' => $this->paginationRules() + [
+                'q' => ['sometimes', 'nullable', 'string', 'max:255'],
+                'status' => ['sometimes', Rule::enum(UserStatus::class)],
+                'role' => ['sometimes', 'string', 'max:32'],
+                'organization_id' => ['sometimes', 'uuid'],
+            ],
+            'administrators' => $this->paginationRules() + ['q' => ['sometimes', 'nullable', 'string', 'max:255']],
+            'index' => $this->paginationRules() + ['q' => ['sometimes', 'nullable', 'string', 'max:255'], 'status' => ['sometimes', Rule::enum(UserStatus::class)]],
+            default => [],
+        };
+    }
+
+    private function paginationRules(): array
+    {
+        return [
+            'limit' => ['sometimes', 'integer', 'min:1', 'max:100'],
+            'cursor' => ['sometimes', 'nullable', 'string', 'max:512'],
+        ];
+    }
+
+    public function after(): array
+    {
+        return [function (Validator $validator): void {
+            foreach (array_diff(array_keys($this->all()), array_keys($this->rules())) as $field) {
+                $validator->errors()->add($field, 'This field is not permitted.');
+            }
+            if ($validator->errors()->isEmpty() && is_string($this->input('cursor'))) {
+                $decoded = json_decode(base64_decode(strtr($this->input('cursor'), '-_', '+/'), true) ?: '', true);
+                if (! is_array($decoded) || count($decoded) !== 2 || ! is_bool($decoded['_pointsToNextItems'] ?? null)
+                    || ! is_string($decoded['public_id'] ?? null) || ! Str::isUuid($decoded['public_id'])) {
+                    throw ValidationException::withMessages(['cursor' => 'The cursor is invalid.']);
+                }
+            }
+        }];
+    }
+}
