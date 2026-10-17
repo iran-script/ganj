@@ -1,15 +1,30 @@
 [CmdletBinding()]
 param(
     [switch]$ValidateOnly,
-    [string]$ImageArchivePath
+    [string]$ImageArchivePath,
+    [Parameter(Mandatory = $true)]
+    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9.-]*$')]
+    [string]$VpsHost,
+    [Parameter(Mandatory = $true)]
+    [ValidateRange(1, 65535)]
+    [int]$SshPort,
+    [Parameter(Mandatory = $true)]
+    [ValidatePattern('^[a-z_][a-z0-9_-]*$')]
+    [string]$VpsUser,
+    [ValidateNotNullOrEmpty()]
+    [string]$SshKeyPath = (Join-Path $env:USERPROFILE '.ssh\nexo_deploy')
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $script:TargetSha = '2111243fff34f724d98c7ae6a825785967fbe882'
-$script:VpsHost = '185.186.77.210'
-$script:VpsUser = 'root'
+$script:VpsHost = $VpsHost
+$script:SshPort = $SshPort
+$script:VpsUser = $VpsUser
+if ($script:VpsHost -eq '185.186.77.210') {
+    throw 'Refusing deployment or rollback target: 185.186.77.210 is the protected old VPS.'
+}
 $script:VpsProjectDirectory = '/opt/nexo-control-staging'
 $script:RemoteMarker = 'nexo-control-staging-v1'
 $script:StagingProject = 'nexo-control-staging'
@@ -290,6 +305,9 @@ function Invoke-Ssh {
 
     $args = @(
         '-i', $KeyPath,
+        '-p', [string]$script:SshPort,
+        '-o', 'IdentitiesOnly=yes',
+        '-o', 'StrictHostKeyChecking=yes',
         '-o', 'BatchMode=yes',
         '-o', 'ConnectTimeout=12',
         '-o', 'ServerAliveInterval=10',
@@ -577,13 +595,19 @@ function Test-StaticPrerequisites {
     $status = Invoke-Native -FilePath $gitExe `
         -Arguments @('-C', $RepositoryRoot, 'status', '--porcelain', '--untracked-files=all') -Label 'Git worktree check'
     $allowedUntracked = @(
+        '?? scripts/deploy-control-staging-direct.ps1',
         '?? scripts/deploy-control-staging.ps1',
         '?? scripts/rollback-control-staging.ps1',
-        '?? .github/workflows/build-control-staging-image.yml'
+        '?? .github/workflows/build-control-staging-image.yml',
+        ' M .github/workflows/build-control-staging-image.yml'
+    )
+    $allowedModified = @(
+        ' M scripts/deploy-control-staging.ps1',
+        ' M scripts/rollback-control-staging.ps1'
     )
     foreach ($entry in $status.Output) {
         $statusLine = [string]$entry
-        if ($statusLine -notin $allowedUntracked) {
+        if ($statusLine -notin $allowedUntracked -and $statusLine -notin $allowedModified) {
             Stop-Deployment "Git worktree has changes outside the deployment helper scripts: $statusLine"
         }
     }
@@ -614,6 +638,51 @@ function Test-StaticPrerequisites {
 }
 
 function Test-GeneratedStaticArtifacts {
+    $deploymentSource = Get-Content -LiteralPath $PSCommandPath -Raw
+    if (-not $deploymentSource.Contains("'-p', [string]`$script:SshPort") -or
+        -not $deploymentSource.Contains("'-P', [string]`$script:SshPort") -or
+        -not $deploymentSource.Contains("nexo_deploy") -or
+        -not $deploymentSource.Contains("'-o', 'IdentitiesOnly=yes'") -or
+        -not $deploymentSource.Contains("'-o', 'StrictHostKeyChecking=yes'") -or
+        $deploymentSource -notmatch 'Tunnel command: ssh .*\-p \$script:SshPort.*StrictHostKeyChecking=yes') {
+        Stop-Deployment 'SSH regression check failed: the configured port, NEXO key, identity restriction and strict host-key checking must be used.'
+    }
+    if ($deploymentSource -notmatch '(?s)\[Parameter\(Mandatory = \$true\)\][\s\S]{0,180}\[string\]\$VpsHost' -or
+        $deploymentSource -notmatch '(?s)\[Parameter\(Mandatory = \$true\)\][\s\S]{0,100}\[int\]\$SshPort' -or
+        $deploymentSource -notmatch 'Refusing deployment or rollback target: 185\.186\.77\.210 is the protected old VPS\.') {
+        Stop-Deployment 'Destination safety regression check failed: host and port must be explicit and the old VPS must be rejected.'
+    }
+    $rollbackSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'rollback-control-staging.ps1') -Raw
+    if ($rollbackSource -notmatch '(?s)\[Parameter\(Mandatory = \$true\)\][\s\S]{0,180}\[string\]\$VpsHost' -or
+        $rollbackSource -notmatch '(?s)\[Parameter\(Mandatory = \$true\)\][\s\S]{0,100}\[int\]\$SshPort' -or
+        $rollbackSource -notmatch 'Refusing rollback target: 185\.186\.77\.210 is the protected old VPS\.' -or
+        -not $rollbackSource.Contains("nexo_deploy") -or
+        -not $rollbackSource.Contains("'StrictHostKeyChecking=yes'")) {
+        Stop-Deployment 'Rollback safety regression check failed: explicit destination, NEXO key, strict host-key checking and old-VPS rejection are required.'
+    }
+    $workflowPath = Join-Path $PSScriptRoot '..\.github\workflows\build-control-staging-image.yml'
+    $workflowSource = Get-Content -LiteralPath $workflowPath -Raw
+    foreach ($requirement in @(
+        'ref: ${{ inputs.target_sha }}',
+        'persist-credentials: false',
+        'target: production',
+        'target: production-nginx',
+        'target: production-control',
+        'platforms: linux/amd64',
+        'retention-days: 7',
+        'nexo-full-stack-linux-amd64-2111243fff34f724d98c7ae6a825785967fbe882',
+        'nexo-control-staging-2111243fff34f724d98c7ae6a825785967fbe882',
+        'sha256sum nexo-full-stack.tar.gz',
+        'sha256sum nexo-control-staging.tar.gz'
+    )) {
+        if (-not $workflowSource.Contains($requirement)) {
+            Stop-Deployment "GitHub Actions workflow regression check failed; expected: $requirement"
+        }
+    }
+    if ($workflowSource -match '(?im)^\s*(?:docker\s+compose\s+up|ssh\s|uses:\s*.*deploy)') {
+        Stop-Deployment 'GitHub Actions workflow must build and publish artifacts only; deployment commands are forbidden.'
+    }
+
     $contextInspectArguments = @(Get-DockerContextInspectArguments -Context 'regression-context')
     if (($contextInspectArguments -join ' ') -ne 'context inspect regression-context' -or
         $contextInspectArguments -contains '--format') {
@@ -685,7 +754,7 @@ if ($MyInvocation.InvocationName -ne '.') {
 
     $sshExe = Find-Executable -Name 'ssh.exe' -FallbackPaths @((Join-Path $env:WINDIR 'System32\OpenSSH\ssh.exe'))
     $scpExe = Find-Executable -Name 'scp.exe' -FallbackPaths @((Join-Path $env:WINDIR 'System32\OpenSSH\scp.exe'))
-    $keyPath = Join-Path $env:USERPROFILE '.ssh\pad_deploy'
+    $keyPath = $SshKeyPath
     if (-not (Test-Path -LiteralPath $keyPath -PathType Leaf)) {
         Stop-Deployment "Expected SSH key does not exist: $keyPath. Key contents were not read."
     }
@@ -877,11 +946,11 @@ if ($MyInvocation.InvocationName -ne '.') {
 
         $makeBundle = Invoke-Ssh -SshExe $sshExe -KeyPath $keyPath `
             -RemoteCommand "mkdir -m 700 $remoteBundlePath" -Label 'Create unique VPS transfer directory'
-        $scpArguments = @('-i', $keyPath, '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=12')
+        $scpArguments = @('-i', $keyPath, '-P', [string]$script:SshPort, '-o', 'IdentitiesOnly=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=12')
         foreach ($path in @($archivePath, $composePath, $nginxPath, $envPath, $remoteScriptPath)) {
             $scpArguments += @($path, "$script:VpsUser@$script:VpsHost`:$remoteBundlePath/")
             $transfer = Invoke-Native -FilePath $scpExe -Arguments $scpArguments -Label "Transfer $([IO.Path]::GetFileName($path))"
-            $scpArguments = @('-i', $keyPath, '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=12')
+            $scpArguments = @('-i', $keyPath, '-P', [string]$script:SshPort, '-o', 'IdentitiesOnly=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=12')
         }
 
         Invoke-Ssh -SshExe $sshExe -KeyPath $keyPath `
@@ -895,7 +964,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         Write-Host "Image tag: $imageTag"
         Write-Host "Image ID: $imageId"
         Write-Host "Image archive SHA256: $archiveHash"
-        Write-Host "Tunnel command: ssh -i `"$keyPath`" -N -L 18101:127.0.0.1:18101 $script:VpsUser@$script:VpsHost"
+        Write-Host "Tunnel command: ssh -i `"$keyPath`" -p $script:SshPort -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -N -L 18101:127.0.0.1:18101 $script:VpsUser@$script:VpsHost"
         Write-Host 'Local browser URL: http://127.0.0.1:18101/login'
     } finally {
         # Remove only the unique transfer directory created by this invocation.

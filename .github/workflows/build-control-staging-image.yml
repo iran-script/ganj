@@ -1,10 +1,10 @@
-name: Build NEXO Control Center staging image
+name: Build NEXO release images
 
 on:
   workflow_dispatch:
     inputs:
       target_sha:
-        description: Exact source commit to build
+        description: Exact approved application source commit
         required: true
         type: string
         default: 2111243fff34f724d98c7ae6a825785967fbe882
@@ -13,10 +13,10 @@ permissions:
   contents: read
 
 jobs:
-  build-control-image:
-    name: Build linux/amd64 Control Center image
+  build-release-images:
+    name: Build all NEXO production images for linux/amd64
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 60
     steps:
       - name: Check out exact target commit
         uses: actions/checkout@v4
@@ -25,7 +25,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
-      - name: Verify requested source and Docker target
+      - name: Verify source SHA, Docker targets, and Compose image names
         shell: bash
         env:
           TARGET_SHA: ${{ inputs.target_sha }}
@@ -35,13 +35,40 @@ jobs:
           [[ "$TARGET_SHA" == "$expected" ]] || { echo 'Only the approved target SHA may be built.' >&2; exit 1; }
           actual="$(git rev-parse HEAD)"
           [[ "$actual" == "$expected" ]] || { echo "Checked out $actual instead of $expected." >&2; exit 1; }
-          grep -Eq '^FROM .* AS production-control[[:space:]]*$' Dockerfile || { echo 'Dockerfile production-control target was not found.' >&2; exit 1; }
+          for target in production production-nginx production-control; do
+            grep -Eiq "^FROM .* AS ${target}[[:space:]]*$" Dockerfile || { echo "Docker target not found: ${target}" >&2; exit 1; }
+          done
           grep -Eq '^ENV NEXT_PUBLIC_API_BASE_URL=/api/v1[[:space:]]*$' Dockerfile || { echo 'Expected relative Control Center API base is missing.' >&2; exit 1; }
+          grep -Eq '^    image: nexo-app:production$' docker-compose.production.yml
+          grep -Eq '^    image: nexo-nginx:production$' docker-compose.production.yml
+          grep -Eq '^    image: nexo-control:production$' docker-compose.production.yml
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build production-control image archive
+      - name: Build Laravel backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          target: production
+          platforms: linux/amd64
+          tags: nexo-app:production
+          outputs: type=docker,dest=${{ runner.temp }}/nexo-app.tar
+          provenance: false
+
+      - name: Build Nginx image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          target: production-nginx
+          platforms: linux/amd64
+          tags: nexo-nginx:production
+          outputs: type=docker,dest=${{ runner.temp }}/nexo-nginx.tar
+          provenance: false
+
+      - name: Build Control Center image
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -52,46 +79,78 @@ jobs:
           outputs: type=docker,dest=${{ runner.temp }}/nexo-control-staging.tar
           provenance: false
 
-      - name: Package image and checksum
+      - name: Verify images and package checksummed artifacts
         shell: bash
         env:
           TARGET_SHA: ${{ inputs.target_sha }}
           WORKFLOW_SHA: ${{ github.sha }}
-          IMAGE_TAG: nexo-control-staging:2111243fff34f724d98c7ae6a825785967fbe882
         run: |
           set -euo pipefail
-          archive="${{ runner.temp }}/nexo-control-staging.tar"
-          artifact_dir="${{ runner.temp }}/nexo-control-staging-artifact"
-          mkdir -p "$artifact_dir"
-          test -s "$archive"
-          docker load --input "$archive"
-          image_size_bytes="$(docker image inspect "$IMAGE_TAG" | jq -r '.[0].Size')"
-          image_id="$(docker image inspect "$IMAGE_TAG" | jq -r '.[0].Id')"
-          [[ "$image_size_bytes" =~ ^[0-9]+$ ]]
-          [[ "$image_id" =~ ^sha256:[a-f0-9]{64}$ ]]
-          tar_bytes="$(stat -c '%s' "$archive")"
-          gzip -1 -c "$archive" > "$artifact_dir/nexo-control-staging.tar.gz"
-          compressed_bytes="$(stat -c '%s' "$artifact_dir/nexo-control-staging.tar.gz")"
-          (
-            cd "$artifact_dir"
-            sha256sum nexo-control-staging.tar.gz > SHA256SUMS
-          )
+          temp='${{ runner.temp }}'
+          control_tag="nexo-control-staging:${TARGET_SHA}"
+          docker load --input "$temp/nexo-app.tar"
+          docker load --input "$temp/nexo-nginx.tar"
+          docker load --input "$temp/nexo-control-staging.tar"
+          docker tag "$control_tag" nexo-control:production
+
+          control_dir="$temp/nexo-control-staging-artifact"
+          full_dir="$temp/nexo-full-stack-artifact"
+          mkdir -p "$control_dir" "$full_dir"
+          gzip -1 -c "$temp/nexo-control-staging.tar" > "$control_dir/nexo-control-staging.tar.gz"
+
+          image_info() {
+            docker image inspect "$1" | jq -c '.[0] | {image_id:.Id,size_bytes:.Size,os:.Os,architecture:.Architecture}'
+          }
+          app_info="$(image_info nexo-app:production)"
+          nginx_info="$(image_info nexo-nginx:production)"
+          control_info="$(image_info nexo-control:production)"
+          for info in "$app_info" "$nginx_info" "$control_info"; do
+            [[ "$(jq -r '.image_id' <<<"$info")" =~ ^sha256:[a-f0-9]{64}$ ]]
+            [[ "$(jq -r '.os' <<<"$info")/$(jq -r '.architecture' <<<"$info")" == linux/amd64 ]]
+            [[ "$(jq -r '.size_bytes' <<<"$info")" =~ ^[0-9]+$ ]]
+          done
+
+          control_tar_bytes="$(stat -c '%s' "$temp/nexo-control-staging.tar")"
+          control_compressed_bytes="$(stat -c '%s' "$control_dir/nexo-control-staging.tar.gz")"
+          control_size_bytes="$(jq -r '.size_bytes' <<<"$control_info")"
+          control_image_id="$(jq -r '.image_id' <<<"$control_info")"
           jq -n \
             --arg target_sha "$TARGET_SHA" \
             --arg workflow_sha "$WORKFLOW_SHA" \
-            --arg image_tag "$IMAGE_TAG" \
+            --arg image_tag "$control_tag" \
             --arg platform 'linux/amd64' \
             --arg target 'production-control' \
-            --arg image_id "$image_id" \
-            --argjson image_size_bytes "$image_size_bytes" \
-            --argjson image_tar_bytes "$tar_bytes" \
-            --argjson compressed_archive_bytes "$compressed_bytes" \
+            --arg image_id "$control_image_id" \
+            --argjson image_size_bytes "$control_size_bytes" \
+            --argjson image_tar_bytes "$control_tar_bytes" \
+            --argjson compressed_archive_bytes "$control_compressed_bytes" \
             '{target_sha:$target_sha,workflow_sha:$workflow_sha,image_tag:$image_tag,image_id:$image_id,platform:$platform,target:$target,image_size_bytes:$image_size_bytes,image_tar_bytes:$image_tar_bytes,compressed_archive_bytes:$compressed_archive_bytes}' \
-            > "$artifact_dir/build-metadata.json"
-          cat "$artifact_dir/SHA256SUMS"
-          cat "$artifact_dir/build-metadata.json"
+            > "$control_dir/build-metadata.json"
+          (cd "$control_dir" && sha256sum nexo-control-staging.tar.gz > SHA256SUMS)
 
-      - name: Upload private repository artifact
+          docker save --output "$temp/nexo-full-stack.tar" \
+            nexo-app:production nexo-nginx:production nexo-control:production
+          gzip -1 -c "$temp/nexo-full-stack.tar" > "$full_dir/nexo-full-stack.tar.gz"
+          full_tar_bytes="$(stat -c '%s' "$temp/nexo-full-stack.tar")"
+          full_compressed_bytes="$(stat -c '%s' "$full_dir/nexo-full-stack.tar.gz")"
+          jq -n \
+            --arg target_sha "$TARGET_SHA" \
+            --arg workflow_sha "$WORKFLOW_SHA" \
+            --arg platform 'linux/amd64' \
+            --argjson archive_tar_bytes "$full_tar_bytes" \
+            --argjson compressed_archive_bytes "$full_compressed_bytes" \
+            --argjson app "$app_info" \
+            --argjson nginx "$nginx_info" \
+            --argjson control "$control_info" \
+            '{target_sha:$target_sha,workflow_sha:$workflow_sha,platform:$platform,archive_tar_bytes:$archive_tar_bytes,compressed_archive_bytes:$compressed_archive_bytes,images:[{service:"app",target:"production",tag:"nexo-app:production",image_id:$app.image_id,size_bytes:$app.size_bytes,os:$app.os,architecture:$app.architecture},{service:"nginx",target:"production-nginx",tag:"nexo-nginx:production",image_id:$nginx.image_id,size_bytes:$nginx.size_bytes,os:$nginx.os,architecture:$nginx.architecture},{service:"control",target:"production-control",tag:"nexo-control:production",image_id:$control.image_id,size_bytes:$control.size_bytes,os:$control.os,architecture:$control.architecture}]}' \
+            > "$full_dir/build-metadata.json"
+          (cd "$full_dir" && sha256sum nexo-full-stack.tar.gz > SHA256SUMS)
+          cat "$control_dir/SHA256SUMS"
+          cat "$control_dir/build-metadata.json"
+          cat "$full_dir/SHA256SUMS"
+          cat "$full_dir/build-metadata.json"
+
+      - name: Upload Control Center staging artifact
         uses: actions/upload-artifact@v4
         with:
           name: nexo-control-staging-2111243fff34f724d98c7ae6a825785967fbe882
@@ -99,6 +158,18 @@ jobs:
             ${{ runner.temp }}/nexo-control-staging-artifact/nexo-control-staging.tar.gz
             ${{ runner.temp }}/nexo-control-staging-artifact/SHA256SUMS
             ${{ runner.temp }}/nexo-control-staging-artifact/build-metadata.json
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+      - name: Upload complete NEXO image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexo-full-stack-linux-amd64-2111243fff34f724d98c7ae6a825785967fbe882
+          path: |
+            ${{ runner.temp }}/nexo-full-stack-artifact/nexo-full-stack.tar.gz
+            ${{ runner.temp }}/nexo-full-stack-artifact/SHA256SUMS
+            ${{ runner.temp }}/nexo-full-stack-artifact/build-metadata.json
           if-no-files-found: error
           retention-days: 7
           compression-level: 0

@@ -1,8 +1,24 @@
 [CmdletBinding()]
-param()
+param(
+    [Parameter(Mandatory = $true)]
+    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9.-]*$')]
+    [string]$VpsHost,
+    [Parameter(Mandatory = $true)]
+    [ValidateRange(1, 65535)]
+    [int]$SshPort,
+    [Parameter(Mandatory = $true)]
+    [ValidatePattern('^[a-z_][a-z0-9_-]*$')]
+    [string]$VpsUser,
+    [ValidateNotNullOrEmpty()]
+    [string]$SshKeyPath = (Join-Path $env:USERPROFILE '.ssh\nexo_deploy')
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+if ($VpsHost -eq '185.186.77.210') {
+    throw 'Refusing rollback target: 185.186.77.210 is the protected old VPS.'
+}
 
 $sshCommand = Get-Command 'ssh.exe' -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $sshCommand) {
@@ -16,7 +32,7 @@ if (-not $sshCommand) {
     $sshPath = $sshCommand.Source
 }
 
-$keyPath = Join-Path $env:USERPROFILE '.ssh\pad_deploy'
+$keyPath = $SshKeyPath
 if (-not (Test-Path -LiteralPath $keyPath -PathType Leaf)) {
     throw "Expected SSH key does not exist: $keyPath. Key contents were not read."
 }
@@ -37,11 +53,14 @@ $remoteEncoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($remot
 $remoteCommand = "printf %s $remoteEncoded | base64 -d | sh"
 $arguments = @(
     '-i', $keyPath,
+    '-p', [string]$SshPort,
+    '-o', 'IdentitiesOnly=yes',
+    '-o', 'StrictHostKeyChecking=yes',
     '-o', 'BatchMode=yes',
     '-o', 'ConnectTimeout=12',
     '-o', 'ServerAliveInterval=10',
     '-o', 'ServerAliveCountMax=3',
-    'root@185.186.77.210',
+    "$VpsUser@$VpsHost",
     $remoteCommand
 )
 $output = @(& $sshPath @arguments 2>&1)
