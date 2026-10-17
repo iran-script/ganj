@@ -11,9 +11,16 @@ import '../../core/errors/api_error.dart';
 
 class QrScannerPage extends StatefulWidget {
   const QrScannerPage(
-      {required this.sessionId, required this.onValue, super.key});
+      {required this.sessionId,
+      required this.onValue,
+      this.api,
+      this.scannerBuilder,
+      super.key});
   final String sessionId;
   final Future<void> Function(String value) onValue;
+  final ApiClient? api;
+  final Widget Function(Future<void> Function(String? value) onDetected)?
+      scannerBuilder;
   @override
   State<QrScannerPage> createState() => _QrScannerPageState();
 }
@@ -26,6 +33,7 @@ class _QrScannerPageState extends State<QrScannerPage>
   String? pendingValue;
   String? pendingRequestId;
   int cameraRevision = 0;
+  late final ApiClient api = widget.api ?? ApiClient();
 
   @override
   void initState() {
@@ -54,7 +62,7 @@ class _QrScannerPageState extends State<QrScannerPage>
       pendingRequestId = const Uuid().v4();
     }
     try {
-      final result = await ApiClient().post('/qr/scan',
+      final result = await api.post('/qr/scan',
           device: true,
           idempotent: true,
           idempotencyKey: pendingRequestId,
@@ -90,8 +98,7 @@ class _QrScannerPageState extends State<QrScannerPage>
                 Offset(constraints.maxWidth / 2, constraints.maxHeight * .4),
             width: size,
             height: size);
-        return Stack(children: [
-          if (!confirmed)
+        final scanner = widget.scannerBuilder?.call(found) ??
             MobileScanner(
                 key: ValueKey(cameraRevision),
                 scanWindow: frame,
@@ -111,7 +118,9 @@ class _QrScannerPageState extends State<QrScannerPage>
                               child: const Text('تلاش دوباره')),
                         ]))),
                 onDetect: (capture) =>
-                    found(capture.barcodes.firstOrNull?.rawValue)),
+                    found(capture.barcodes.firstOrNull?.rawValue));
+        return Stack(children: [
+          if (!confirmed) scanner,
           if (!confirmed)
             IgnorePointer(
                 child: CustomPaint(

@@ -13,7 +13,7 @@ class GameSessionContractTest extends TestCase
         $spec = Yaml::parseFile(base_path('docs/specs/03_openapi.yaml'));
         $expected = [];
         $routes = collect(Route::getRoutes()->getRoutes());
-        $actual = $routes->filter(fn ($r): bool => str_starts_with($r->getName() ?? '', 'games.') || str_starts_with($r->getName() ?? '', 'sessions.'));
+        $actual = $routes->filter(fn ($r): bool => str_starts_with($r->getName() ?? '', 'games.') || str_starts_with($r->getName() ?? '', 'sessions.') || str_starts_with($r->getName() ?? '', 'rooms.'));
         foreach ($actual as $route) {
             $path = substr($route->uri(), 6);
             $method = strtolower($route->methods()[0]);
@@ -28,7 +28,7 @@ class GameSessionContractTest extends TestCase
             }
             $expected[] = $path;
         }
-        $this->assertCount(23, $expected);
+        $this->assertCount(27, $expected);
         foreach (['/billing', '/payments', '/store', '/gps', '/ar'] as $later) {
             $this->assertFalse($routes->contains(fn ($r): bool => in_array(ltrim($later, '/'), explode('/', $r->uri()), true)));
         }

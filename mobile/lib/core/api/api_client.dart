@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 
@@ -12,6 +13,7 @@ import '../errors/api_error.dart';
 import '../device/device_identity.dart';
 import '../storage/secure_store.dart';
 import '../offline/offline_identity.dart';
+import '../auth/session_expiry.dart';
 
 class ApiClient {
   ApiClient({SecureStore? store, http.Client? client})
@@ -44,6 +46,18 @@ class ApiClient {
         expectedOwner: expectedOwner);
   }
 
+  Future<Map<String, dynamic>> patch(
+    String path, {
+    required Map<String, dynamic> body,
+    bool device = false,
+  }) async {
+    return _send('PATCH', path, body: body, device: device);
+  }
+
+  Future<Map<String, dynamic>> delete(String path) async {
+    return _send('DELETE', path);
+  }
+
   Future<Map<String, dynamic>> _send(
     String method,
     String path, {
@@ -53,15 +67,38 @@ class ApiClient {
     String? idempotencyKey,
     OfflineOwner? expectedOwner,
   }) async {
+    final diagnosticRequest = _diagnosticRequest(path);
+    final diagnosticEndpoint = _safeDiagnosticEndpoint(path);
+    final authDiagnostic =
+        path == '/auth/login' || path == '/auth/register' || path == '/me';
+    final baseUri = Uri.tryParse(AppConfig.apiBaseUrl);
+    if (baseUri == null ||
+        !AppConfig.isAllowedApiBaseUrl(AppConfig.apiBaseUrl)) {
+      if (kDebugMode && diagnosticRequest) {
+        debugPrint(
+            'NEXO $method request failed kind=insecure_or_invalid_endpoint endpoint=$diagnosticEndpoint');
+      }
+      throw const ApiError(code: 'INSECURE_ENDPOINT', message: '');
+    }
     final headers = <String, String>{
       'Accept': 'application/json',
       'Content-Type': 'application/json'
     };
-    final token = await _store.read(_tokenKey);
+    String? token;
+    String? deviceUuid;
+    try {
+      token = await _store.read(_tokenKey);
+      deviceUuid = device ? await _device.getOrCreate() : null;
+    } catch (failure) {
+      if (kDebugMode && diagnosticRequest) {
+        debugPrint(
+            'NEXO $method request failed kind=${diagnosticFailureKind(failure)} endpoint=$diagnosticEndpoint');
+      }
+      rethrow;
+    }
     if (token != null && token.isNotEmpty) {
       headers['Authorization'] = 'Bearer $token';
     }
-    final deviceUuid = device ? await _device.getOrCreate() : null;
     if (device) headers['X-Device-Id'] = deviceUuid!;
     if (expectedOwner != null &&
         (!expectedOwner.matches(OfflineIdentity.instance.owner) ||
@@ -73,13 +110,12 @@ class ApiClient {
     if (idempotent) {
       headers['Idempotency-Key'] = idempotencyKey ?? const Uuid().v4();
     }
-    final authDiagnostic = path == '/auth/login' || path == '/me';
     if (kDebugMode && authDiagnostic) {
       debugPrint(
-          'NEXO $method ${AppConfig.apiBaseUrl}$path authorization=${headers.containsKey('Authorization')} device_header=${headers.containsKey('X-Device-Id')}');
+          'NEXO $method ${AppConfig.diagnosticApiBaseUrl}$path authorization=${headers.containsKey('Authorization')} device_header=${headers.containsKey('X-Device-Id')}');
     }
     final request =
-        http.Request(method, Uri.parse('${AppConfig.apiBaseUrl}$path'))
+        http.Request(method, baseUri.replace(path: '${baseUri.path}$path'))
           ..headers.addAll(headers);
     if (method != 'GET') {
       request.body = jsonEncode(body);
@@ -93,15 +129,33 @@ class ApiClient {
       text = await response.stream
           .bytesToString()
           .timeout(const Duration(seconds: 20));
+    } catch (failure) {
+      if (kDebugMode && diagnosticRequest) {
+        debugPrint(
+            'NEXO $method request failed kind=${diagnosticFailureKind(failure)} endpoint=$diagnosticEndpoint');
+      }
+      rethrow;
     } finally {
       if (_client == null) client.close();
     }
-    if (kDebugMode && authDiagnostic) {
-      debugPrint('NEXO $path HTTP ${response.statusCode}');
+    if (kDebugMode && diagnosticRequest) {
+      debugPrint(
+          'NEXO $method $diagnosticEndpoint HTTP ${response.statusCode}');
     }
-    final decoded = text.isEmpty
-        ? <String, dynamic>{}
-        : jsonDecode(text) as Map<String, dynamic>;
+    Map<String, dynamic> decoded;
+    try {
+      final value = text.isEmpty ? <String, dynamic>{} : jsonDecode(text);
+      if (value is! Map<String, dynamic>) {
+        throw const FormatException('Expected JSON object.');
+      }
+      decoded = value;
+    } on FormatException {
+      if (kDebugMode && diagnosticRequest) {
+        debugPrint(
+            'NEXO $method response failed kind=invalid_json status=${response.statusCode} endpoint=$diagnosticEndpoint');
+      }
+      throw const ApiError(code: 'INVALID_RESPONSE', message: '');
+    }
     final nestedData = decoded['data'] is Map<String, dynamic>
         ? decoded['data'] as Map<String, dynamic>
         : null;
@@ -112,13 +166,29 @@ class ApiClient {
       final error = (decoded['error'] ??
           nestedData?['error'] ??
           <String, dynamic>{}) as Map<String, dynamic>;
-      if (kDebugMode && authDiagnostic) {
-        debugPrint('NEXO $path error.code=${error['code'] ?? 'UNKNOWN_ERROR'}');
+      if (kDebugMode && diagnosticRequest) {
+        final rawCode = error['code'];
+        final safeCode =
+            rawCode is String && RegExp(r'^[A-Z0-9_]{1,64}$').hasMatch(rawCode)
+                ? rawCode
+                : 'UNKNOWN_ERROR';
+        debugPrint(
+            'NEXO $method $diagnosticEndpoint error.status=${response.statusCode} code=$safeCode');
+      }
+      final code = error['code'] as String? ?? 'UNKNOWN_ERROR';
+      if (response.statusCode == 401 &&
+          !path.endsWith('/auth/login') &&
+          !path.endsWith('/auth/register')) {
+        SessionExpiry.instance.expire();
       }
       throw ApiError(
-          code: error['code'] as String? ?? 'UNKNOWN_ERROR',
-          message: error['message'] as String? ?? '',
-          statusCode: response.statusCode);
+        code: code,
+        message: error['message'] as String? ?? '',
+        statusCode: response.statusCode,
+        details: error['details'] is Map<String, dynamic>
+            ? error['details'] as Map<String, dynamic>
+            : null,
+      );
     }
     if (decoded['data'] is List) {
       return {'items': decoded['data'], 'meta': decoded['meta']};
@@ -230,7 +300,52 @@ class ApiClient {
   Future<String> deviceId() => _device.getOrCreate();
 
   static bool isNetworkFailure(Object error) =>
+      (error is ApiError &&
+          ['NETWORK_ERROR', 'NETWORK_UNAVAILABLE'].contains(error.code)) ||
       error is SocketException ||
       error is TimeoutException ||
+      error is TlsException ||
       error is http.ClientException;
+
+  static bool _diagnosticRequest(String path) =>
+      path == '/auth/login' ||
+      path == '/auth/register' ||
+      path == '/me' ||
+      path.startsWith('/games/') ||
+      path == '/games' ||
+      path.startsWith('/game-sessions/') ||
+      path == '/game-sessions' ||
+      path.startsWith('/rooms/') ||
+      path.startsWith('/runtime/');
+
+  static String _safeDiagnosticEndpoint(String path) => path
+      .split('/')
+      .map((segment) =>
+          RegExp(r'^[0-9a-fA-F-]{32,36}$').hasMatch(segment) ? ':id' : segment)
+      .join('/');
+
+  static String diagnosticFailureKind(Object error) {
+    if (error is TimeoutException) return 'timeout';
+    if (error is PlatformException) return 'secure_storage_platform';
+    if (error is TlsException) return 'tls';
+    if (error is SocketException) return 'socket';
+    if (error is http.ClientException) {
+      final safeType = error.message.toLowerCase();
+      if (safeType.contains('handshake') ||
+          safeType.contains('certificate') ||
+          safeType.contains('tls')) {
+        return 'tls';
+      }
+      if (safeType.contains('socket') ||
+          safeType.contains('host lookup') ||
+          safeType.contains('connection refused') ||
+          safeType.contains('network is unreachable')) {
+        return 'socket';
+      }
+      return 'http_client';
+    }
+    if (error is FormatException) return 'invalid_json';
+    if (error is ApiError) return 'api';
+    return 'unexpected';
+  }
 }

@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\CheckpointController;
 use App\Http\Controllers\Api\ContentBankController;
 use App\Http\Controllers\Api\GameController;
 use App\Http\Controllers\Api\GameMasterController;
+use App\Http\Controllers\Api\GameRoomController;
 use App\Http\Controllers\Api\GameSessionController;
 use App\Http\Controllers\Api\HealthController;
 use App\Http\Controllers\Api\IdentityController;
@@ -106,6 +107,10 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/scenario-versions/{version_id}/'.$action, [ScenarioController::class, 'mutate'])->name('scenarios.'.$action);
         }
         Route::get('/games', [GameController::class, 'index'])->name('games.index');
+        Route::get('/games/{game_id}/rooms', [GameRoomController::class, 'index'])->name('rooms.index');
+        Route::post('/games/{game_id}/rooms', [GameRoomController::class, 'create'])->name('rooms.create');
+        Route::get('/rooms/{room_id}', [GameRoomController::class, 'show'])->name('rooms.show');
+        Route::post('/rooms/{room_id}/teams', [GameRoomController::class, 'addTeam'])->name('rooms.teams.add');
         Route::post('/games', [GameController::class, 'create'])->name('games.create');
         Route::get('/games/{game_id}', [GameController::class, 'show'])->name('games.show');
         Route::patch('/games/{game_id}', [GameController::class, 'update'])->name('games.update');

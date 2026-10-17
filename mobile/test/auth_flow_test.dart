@@ -70,7 +70,7 @@ void main() {
                 jsonEncode({
                   'data': {
                     'token': 'test-token',
-                    'user': {'id': 'public-user'},
+                    'user': {'id': 'public-user', 'name': 'Test Player'},
                     'device': {'device_uuid': deviceUuid}
                   }
                 }),
@@ -79,7 +79,8 @@ void main() {
           expect(request.url.path, endsWith('/me'));
           expect(request.headers['Authorization'], 'Bearer test-token');
           expect(request.headers['X-Device-Id'], deviceUuid);
-          return http.Response('{"data":{"id":"public-user"}}', 200);
+          return http.Response(
+              '{"data":{"id":"public-user","name":"Test Player"}}', 200);
         }));
     final auth = AuthController(api, identity: OfflineIdentity());
 
@@ -90,6 +91,8 @@ void main() {
     await restored.restore();
     expect(restored.user?['id'], 'public-user');
     expect(restored.identity.owner?.deviceUuid, deviceUuid);
+    auth.dispose();
+    restored.dispose();
   });
 
   test('network failures produce a safe visible message', () async {
@@ -102,6 +105,7 @@ void main() {
     expect(auth.error?.userMessage, 'ارتباط با سرور برقرار نشد');
     expect(auth.signingIn, isFalse);
     expect(auth.authenticated, isFalse);
+    auth.dispose();
   });
 
   testWidgets('login timeout displays an error and allows another attempt',
@@ -133,7 +137,7 @@ void main() {
             jsonEncode({
               'data': {
                 'token': 'test-token',
-                'user': {'id': 'public-user'},
+                'user': {'id': 'public-user', 'name': 'Test Player'},
                 'device': {'device_uuid': deviceUuid}
               }
             }),
@@ -142,6 +146,7 @@ void main() {
         auth.login('09120000001', 'test-password'), throwsA(isA<ApiError>()));
     expect(auth.error?.code, 'AUTH_STORAGE_FAILED');
     expect(auth.authenticated, isFalse);
+    auth.dispose();
   });
 }
 

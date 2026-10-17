@@ -1,4 +1,5 @@
 import 'package:uuid/uuid.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/offline/outbox_repository.dart';
@@ -19,10 +20,22 @@ class RuntimeRepository {
   Future<Map<String, dynamic>> projection(String sessionId) async {
     final generation = OfflineIdentity.instance.generation;
     try {
-      final result = await _api
-          .get('/game-sessions/$sessionId/players/me/runtime', device: true);
+      final result = await _api.get(
+        '/game-sessions/$sessionId/players/me/runtime',
+        device: true,
+      );
       if (generation != OfflineIdentity.instance.generation) {
         throw StateError('Identity changed.');
+      }
+      try {
+        final state =
+            await _api.get('/game-sessions/$sessionId/state', device: true);
+        result['session_status'] = state['status'];
+      } catch (error) {
+        if (kDebugMode) {
+          debugPrint(
+              'NEXO optional session status unavailable kind=${ApiClient.diagnosticFailureKind(error)}');
+        }
       }
       await _cache.saveRuntime(sessionId, result);
       return result;
@@ -64,8 +77,9 @@ class RuntimeRepository {
       required Map<String, dynamic> evidence,
       required bool delayedValidationAllowed,
       required String nodeType,
-      String? teamId}) async {
-    final key = const Uuid().v4();
+      String? teamId,
+      String? idempotencyKey}) async {
+    final key = idempotencyKey ?? const Uuid().v4();
     final generation = OfflineIdentity.instance.generation;
     try {
       return await submit(nodeId, evidence, key: key);

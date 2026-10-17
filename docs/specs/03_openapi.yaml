@@ -20,6 +20,7 @@ tags:
 - name: GameMaster
 - name: GameSessions
 - name: Games
+- name: Rooms
 - name: Hints
 - name: LiveChallenges
 - name: Locations
@@ -733,6 +734,75 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/TeamReason'
+  /games/{game_id}/rooms:
+    get:
+      tags: [Rooms]
+      operationId: listGameRooms
+      summary: listGameRooms
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: game_id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 25}}
+        - {name: cursor, in: query, schema: {type: string, maxLength: 512}}
+      responses:
+        '200': {description: Room list, content: {application/json: {schema: {$ref: '#/components/schemas/GameRoomList'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    post:
+      tags: [Rooms]
+      operationId: createGameRoom
+      summary: createGameRoom
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: game_id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: Idempotency-Key, in: header, required: false, schema: {type: string, minLength: 8, maxLength: 255}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: false, required: [name, team_id], properties: {name: {type: string, minLength: 2, maxLength: 120}, team_id: {type: string, format: uuid}}}
+      responses:
+        '201': {description: Room created, content: {application/json: {schema: {$ref: '#/components/schemas/GameRoomSuccess'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /rooms/{room_id}:
+    get:
+      tags: [Rooms]
+      operationId: getGameRoom
+      summary: getGameRoom
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: room_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: Room, content: {application/json: {schema: {$ref: '#/components/schemas/GameRoomSuccess'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /rooms/{room_id}/teams:
+    post:
+      tags: [Rooms]
+      operationId: addTeamToGameRoom
+      summary: addTeamToGameRoom
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: room_id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: Idempotency-Key, in: header, required: false, schema: {type: string, minLength: 8, maxLength: 255}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: false, required: [team_id], properties: {team_id: {type: string, format: uuid}}}
+      responses:
+        '200': {description: Updated room, content: {application/json: {schema: {$ref: '#/components/schemas/GameRoomSuccess'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
   /games:
     {"post":{"tags":["Games"],"operationId":"createGame","summary":"createGame","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"201":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/GameSuccess"}}}}},"security":[{"bearerAuth":[]}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/GameCreate"}}}},"parameters":[{"name":"Idempotency-Key","in":"header","required":false,"schema":{"type":"string","minLength":8,"maxLength":255}}],"description":"Tenant-scoped; opaque public IDs only. Unknown request fields are rejected. Captain and Player projections are limited; assigned GameMaster and OrganizationAdmin operations are policy checked."},"get":{"tags":["Games"],"operationId":"listGames","summary":"listGames","responses":{"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"403":{"$ref":"#/components/responses/Forbidden"},"404":{"$ref":"#/components/responses/NotFound"},"409":{"$ref":"#/components/responses/Conflict"},"422":{"$ref":"#/components/responses/ValidationError"},"429":{"$ref":"#/components/responses/RateLimited"},"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/GameList"}}}}},"security":[{"bearerAuth":[]}],"parameters":[{"name":"limit","in":"query","schema":{"type":"integer","minimum":1,"maximum":100,"default":25}},{"name":"cursor","in":"query","schema":{"type":"string","maxLength":512}}],"description":"Tenant-scoped; opaque public IDs only. Unknown request fields are rejected. Captain and Player projections are limited; assigned GameMaster and OrganizationAdmin operations are policy checked."}}
   /games/{game_id}:
@@ -2921,10 +2991,10 @@ components:
       {"type":"object","additionalProperties":false,"properties":{"revision_token":{"type":"string","format":"uuid"},"graph":{"$ref":"#/components/schemas/ScenarioGraph"},"validation":{"$ref":"#/components/schemas/ScenarioValidation"},"randomization":{"type":"object","additionalProperties":false,"properties":{"seed_required":{"type":"boolean"},"seed_owner":{"const":"TeamScenarioInstance"},"seed_frozen_at":{"const":"instance_creation"},"runtime_handler_available":{"const":true}}}}}
     ScenarioSimulation:
       {"type":"object","additionalProperties":false,"properties":{"mode":{"const":"STRUCTURAL_ONLY"},"revision_token":{"type":"string","format":"uuid"},"status":{"enum":["PASS","FAIL"]},"errors":{"type":"array","items":{"type":"object","additionalProperties":false,"properties":{"code":{"type":"string"},"path":{"type":"string"}}}},"warnings":{"type":"array","items":[]},"reachable_nodes":{"type":"array","items":{"type":"string"}},"branches":{"type":"array","items":{"type":"string"}},"dead_ends":{"type":"array","items":{"type":"string"}},"runtime_executed":{"const":false}}}
-    GameCreate: {"type":"object","additionalProperties":false,"properties":{"organization_id":{"type":"string","format":"uuid"},"name":{"type":"string","minLength":1,"maxLength":255},"slug":{"type":"string","maxLength":100,"pattern":"^[a-z0-9]+(?:-[a-z0-9]+)*$"},"description":{"type":"string","nullable":true,"maxLength":10000},"default_timezone":{"type":"string"},"status":{"type":"string","enum":["DRAFT","ACTIVE"]},"reason":{"type":"string","maxLength":1000,"nullable":true}},"required":["organization_id","name","slug","default_timezone"]}
-    GameUpdate: {"type":"object","additionalProperties":false,"properties":{"name":{"type":"string","minLength":1,"maxLength":255},"slug":{"type":"string","maxLength":100,"pattern":"^[a-z0-9]+(?:-[a-z0-9]+)*$"},"description":{"type":"string","nullable":true,"maxLength":10000},"default_timezone":{"type":"string"},"status":{"type":"string","enum":["DRAFT","ACTIVE"]},"reason":{"type":"string","maxLength":1000,"nullable":true}},"required":[]}
+    GameCreate: {"type":"object","additionalProperties":false,"properties":{"organization_id":{"type":"string","format":"uuid"},"name":{"type":"string","minLength":1,"maxLength":255},"slug":{"type":"string","maxLength":100,"pattern":"^[a-z0-9]+(?:-[a-z0-9]+)*$"},"description":{"type":"string","nullable":true,"maxLength":10000},"city":{"type":"string","nullable":true,"maxLength":120},"default_timezone":{"type":"string"},"status":{"type":"string","enum":["DRAFT","ACTIVE"]},"reason":{"type":"string","maxLength":1000,"nullable":true}},"required":["organization_id","name","slug","default_timezone"]}
+    GameUpdate: {"type":"object","additionalProperties":false,"properties":{"name":{"type":"string","minLength":1,"maxLength":255},"slug":{"type":"string","maxLength":100,"pattern":"^[a-z0-9]+(?:-[a-z0-9]+)*$"},"description":{"type":"string","nullable":true,"maxLength":10000},"city":{"type":"string","nullable":true,"maxLength":120},"default_timezone":{"type":"string"},"status":{"type":"string","enum":["DRAFT","ACTIVE"]},"reason":{"type":"string","maxLength":1000,"nullable":true}},"required":[]}
     GameReason: {"type":"object","additionalProperties":false,"properties":{"reason":{"type":"string","maxLength":1000,"nullable":true}},"required":[]}
-    Game: {"type":"object","additionalProperties":false,"properties":{"id":{"type":"string","format":"uuid"},"organization_id":{"type":"string","format":"uuid"},"name":{"type":"string","minLength":1,"maxLength":255},"slug":{"type":"string","maxLength":100,"pattern":"^[a-z0-9]+(?:-[a-z0-9]+)*$"},"description":{"type":"string","nullable":true,"maxLength":10000},"default_timezone":{"type":"string"},"status":{"type":"string","enum":["DRAFT","ACTIVE","ARCHIVED"]},"created_at":{"type":"string","format":"date-time","nullable":true},"updated_at":{"type":"string","format":"date-time","nullable":true},"archived_at":{"type":"string","format":"date-time","nullable":true}},"required":["id","organization_id","name","slug","status","default_timezone"]}
+    Game: {"type":"object","additionalProperties":false,"properties":{"id":{"type":"string","format":"uuid"},"organization_id":{"type":"string","format":"uuid"},"name":{"type":"string","minLength":1,"maxLength":255},"slug":{"type":"string","maxLength":100,"pattern":"^[a-z0-9]+(?:-[a-z0-9]+)*$"},"description":{"type":"string","nullable":true,"maxLength":10000},"city":{"type":"string","nullable":true,"maxLength":120},"default_timezone":{"type":"string"},"status":{"type":"string","enum":["DRAFT","ACTIVE","ARCHIVED"]},"created_at":{"type":"string","format":"date-time","nullable":true},"updated_at":{"type":"string","format":"date-time","nullable":true},"archived_at":{"type":"string","format":"date-time","nullable":true}},"required":["id","organization_id","name","slug","status","default_timezone"]}
     SessionCreate: {"type":"object","additionalProperties":false,"properties":{"game_id":{"type":"string","format":"uuid"},"timezone":{"type":"string"},"registration_opens_at":{"type":"string","format":"date-time","nullable":true},"registration_closes_at":{"type":"string","format":"date-time","nullable":true},"scheduled_start_at":{"type":"string","format":"date-time","nullable":true},"reason":{"type":"string","maxLength":1000,"nullable":true}},"required":["game_id"]}
     SessionUpdate: {"type":"object","additionalProperties":false,"properties":{"timezone":{"type":"string"},"registration_opens_at":{"type":"string","format":"date-time","nullable":true},"registration_closes_at":{"type":"string","format":"date-time","nullable":true},"scheduled_start_at":{"type":"string","format":"date-time","nullable":true},"reason":{"type":"string","maxLength":1000,"nullable":true}},"required":[]}
     SessionRegisterTeam: {"type":"object","additionalProperties":false,"properties":{"team_id":{"type":"string","format":"uuid"},"reason":{"type":"string","maxLength":1000,"nullable":true}},"required":["team_id"]}
@@ -2941,6 +3011,9 @@ components:
     SessionStartResultSuccess: {"type":"object","additionalProperties":false,"properties":{"data":{"$ref":"#/components/schemas/SessionStartResult"}},"required":["data"]}
     GameList: {"type":"object","additionalProperties":false,"properties":{"data":{"type":"array","items":{"$ref":"#/components/schemas/Game"}},"meta":{"type":"object","additionalProperties":false,"properties":{"pagination":{"type":"object","additionalProperties":false,"properties":{"cursor":{"type":"string","nullable":true},"next_cursor":{"type":"string","nullable":true},"has_more":{"type":"boolean"}},"required":["cursor","next_cursor","has_more"]}},"required":["pagination"]}},"required":["data","meta"]}
     GameSessionList: {"type":"object","additionalProperties":false,"properties":{"data":{"type":"array","items":{"$ref":"#/components/schemas/GameSession"}},"meta":{"type":"object","additionalProperties":false,"properties":{"pagination":{"type":"object","additionalProperties":false,"properties":{"cursor":{"type":"string","nullable":true},"next_cursor":{"type":"string","nullable":true},"has_more":{"type":"boolean"}},"required":["cursor","next_cursor","has_more"]}},"required":["pagination"]}},"required":["data","meta"]}
+    GameRoom: {"type":"object","additionalProperties":false,"properties":{"id":{"type":"string","format":"uuid"},"game_id":{"type":"string","format":"uuid"},"game_name":{"type":"string"},"city":{"type":"string","nullable":true},"name":{"type":"string"},"status":{"type":"string","enum":["OPEN","FULL","CLOSED"]},"session_status":{"type":"string","nullable":true,"enum":["REGISTRATION","READY","RUNNING","PAUSED","FINISHED","CANCELLED",null]},"capacity":{"type":"integer"},"team_count":{"type":"integer"},"teams":{"type":"array","items":{"type":"object","additionalProperties":false,"properties":{"id":{"type":"string","format":"uuid"},"name":{"type":"string"},"captain":{"type":"string"},"member_count":{"type":"integer"},"eligible":{"type":"boolean"},"actor_is_member":{"type":"boolean"},"can_add_to_room":{"type":"boolean"}},"required":["id","name","captain","member_count","eligible","actor_is_member","can_add_to_room"]}},"created_at":{"type":"string","format":"date-time","nullable":true}},"required":["id","game_id","game_name","name","status","session_status","capacity","team_count","teams"]}
+    GameRoomSuccess: {"type":"object","additionalProperties":false,"properties":{"data":{"$ref":"#/components/schemas/GameRoom"}},"required":["data"]}
+    GameRoomList: {"type":"object","additionalProperties":false,"properties":{"data":{"type":"array","items":{"$ref":"#/components/schemas/GameRoom"}},"meta":{"type":"object","additionalProperties":false,"properties":{"pagination":{"type":"object","additionalProperties":false,"properties":{"cursor":{"type":"string","nullable":true},"next_cursor":{"type":"string","nullable":true},"has_more":{"type":"boolean"}},"required":["cursor","next_cursor","has_more"]}},"required":["pagination"]}},"required":["data","meta"]}
     SessionTimelineEventList: {"type":"object","additionalProperties":false,"properties":{"data":{"type":"array","items":{"$ref":"#/components/schemas/SessionTimelineEvent"}},"meta":{"type":"object","additionalProperties":false,"properties":{"pagination":{"type":"object","additionalProperties":false,"properties":{"cursor":{"type":"string","nullable":true},"next_cursor":{"type":"string","nullable":true},"has_more":{"type":"boolean"}},"required":["cursor","next_cursor","has_more"]}},"required":["pagination"]}},"required":["data","meta"]}
     "OrganizationContext":
       "type": "object"

@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:nexo_player/app/nexo_theme.dart';
+import 'package:nexo_player/core/api/api_client.dart';
 import 'package:nexo_player/core/errors/api_error.dart';
 import 'package:nexo_player/core/offline/offline_sync_service.dart';
 import 'package:nexo_player/core/offline/sync_state.dart';
+import 'package:nexo_player/core/storage/secure_store.dart';
 import 'package:nexo_player/features/runtime/gameplay_page.dart';
 import 'package:nexo_player/features/runtime/node_renderer.dart';
 import 'package:nexo_player/features/runtime/runtime_repository.dart';
@@ -47,7 +51,8 @@ void main() {
     await tester.pumpWidget(host(GameplayPage(
         sessionId: 'session',
         repository: repository,
-        syncService: IdleSync())));
+        syncService: IdleSync(),
+        api: _testApi())));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('ورود به مأموریت'));
     await tester.tap(find.text('ورود به مأموریت'));
@@ -67,7 +72,8 @@ void main() {
     await tester.pumpWidget(host(GameplayPage(
         sessionId: 'session',
         repository: repository,
-        syncService: IdleSync())));
+        syncService: IdleSync(),
+        api: _testApi())));
     await tester.pumpAndSettle();
     expect(find.text('مأموریت کامل شد'), findsOneWidget);
     expect(find.text('ورود به مأموریت'), findsNothing);
@@ -109,6 +115,18 @@ class IdleSync extends OfflineSyncService {
   Future<void> sync() async {}
 }
 
+ApiClient _testApi() => ApiClient(
+    store: _TestStore(),
+    client: MockClient((_) async => http.Response(
+        '{"data":{"score":0,"hints_used":0,"effective_elapsed_seconds":0}}',
+        200)));
+
+class _TestStore extends SecureStore {
+  @override
+  Future<String?> read(String key) async =>
+      key == 'nexo.device_id' ? '00000000-0000-4000-8000-000000000001' : null;
+}
+
 class PilotRuntime extends RuntimeRepository {
   bool completed = false;
   int submissions = 0;
@@ -136,7 +154,8 @@ class PilotRuntime extends RuntimeRepository {
       required Map<String, dynamic> evidence,
       required bool delayedValidationAllowed,
       required String nodeType,
-      String? teamId}) async {
+      String? teamId,
+      String? idempotencyKey}) async {
     submissions++;
     return {'accepted': false};
   }

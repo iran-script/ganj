@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  if (kDebugMode) debugPrint('NEXO API_BASE_URL=${AppConfig.apiBaseUrl}');
+  if (kDebugMode) {
+    debugPrint('NEXO API_BASE_URL=${AppConfig.diagnosticApiBaseUrl}');
+  }
   runApp(const NexoApp());
 }

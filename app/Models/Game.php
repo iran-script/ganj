@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 
 #[Guarded(['*'])]
@@ -36,10 +37,15 @@ class Game extends Model
         return $this->belongsTo(Organization::class);
     }
 
+    public function rooms(): HasMany
+    {
+        return $this->hasMany(GameRoom::class);
+    }
+
     public function publicProfile(): array
     {
         return ['id' => $this->public_id, 'organization_id' => $this->organization->public_id,
-            'name' => $this->name, 'slug' => $this->slug, 'description' => $this->description,
+            'name' => $this->name, 'slug' => $this->slug, 'description' => $this->description, 'city' => $this->city,
             'status' => $this->status, 'default_timezone' => $this->default_timezone,
             'created_at' => $this->created_at?->toISOString(), 'updated_at' => $this->updated_at?->toISOString(),
             'archived_at' => $this->archived_at?->toISOString()];

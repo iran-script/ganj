@@ -5,6 +5,8 @@ import '../errors/api_error.dart';
 import '../offline/outbox_repository.dart';
 import '../offline/offline_identity.dart';
 import '../offline/local_database.dart';
+import 'session_expiry.dart';
+import 'user_profile.dart';
 
 class AuthController extends ChangeNotifier {
   AuthController(this.api,
@@ -13,15 +15,19 @@ class AuthController extends ChangeNotifier {
       OfflineIdentity? identity})
       : outbox = outbox ?? OutboxRepository(),
         database = database ?? LocalDatabase.instance,
-        identity = identity ?? OfflineIdentity.instance;
+        identity = identity ?? OfflineIdentity.instance {
+    SessionExpiry.instance.addListener(_handleSessionExpiry);
+  }
 
   final ApiClient api;
   final OutboxRepository outbox;
   final LocalDatabase database;
   final OfflineIdentity identity;
   Map<String, dynamic>? user;
+  UserProfile? profile;
   bool loading = true;
   bool signingIn = false;
+  bool expiring = false;
   ApiError? error;
 
   bool get authenticated => user != null;
@@ -35,11 +41,10 @@ class AuthController extends ChangeNotifier {
         identity.clear();
       } else {
         final profile = await api.get('/me', device: true);
-        if (profile['id'] is! String) {
-          throw const ApiError(code: 'INVALID_RESPONSE', message: '');
-        }
-        identity.authenticate(profile['id'] as String, await api.deviceId());
+        final typedProfile = UserProfile.fromJson(profile);
+        identity.authenticate(typedProfile.id, await api.deviceId());
         user = profile;
+        this.profile = typedProfile;
       }
       error = null;
     } catch (failure) {
@@ -57,6 +62,7 @@ class AuthController extends ChangeNotifier {
       if (exception.code == 'AUTHENTICATION_REQUIRED') {
         await api.clearToken();
         user = null;
+        profile = null;
         identity.clear();
       } else {
         error = exception;
@@ -73,36 +79,11 @@ class AuthController extends ChangeNotifier {
     error = null;
     notifyListeners();
     try {
-      final deviceUuid = await api.deviceId();
       final isEmail = identifier.contains('@');
-      final result = await api.post('/auth/login', body: {
+      await _authenticate('/auth/login', {
         (isEmail ? 'email' : 'mobile'): identifier,
         'password': password,
-        'device_uuid': deviceUuid,
-        'device_name': 'NEXO Player',
-        'platform': defaultTargetPlatform.name,
-        'app_version': '0.1.0'
       });
-      final token = result['token'];
-      final profile = result['user'];
-      final device = result['device'];
-      if (token is! String ||
-          token.isEmpty ||
-          profile is! Map<String, dynamic> ||
-          profile['id'] is! String ||
-          device is! Map<String, dynamic> ||
-          device['device_uuid'] != deviceUuid) {
-        throw const ApiError(code: 'INVALID_RESPONSE', message: '');
-      }
-      await api.saveToken(token);
-      if (kDebugMode) debugPrint('NEXO auth token saved=true');
-      final readable = await api.token() == token;
-      if (kDebugMode) debugPrint('NEXO auth token readable=$readable');
-      if (!readable) {
-        throw const ApiError(code: 'AUTH_STORAGE_FAILED', message: '');
-      }
-      identity.authenticate(profile['id'] as String, deviceUuid);
-      user = profile;
       if (kDebugMode) debugPrint('NEXO auth login success=true');
     } catch (exception) {
       error = exception is ApiError
@@ -120,7 +101,11 @@ class AuthController extends ChangeNotifier {
             statusCode: error!.statusCode);
       }
       if (kDebugMode) {
-        debugPrint('NEXO auth login success=false error.code=${error!.code}');
+        final safeCode = RegExp(r'^[A-Z0-9_]{1,64}$').hasMatch(error!.code)
+            ? error!.code
+            : 'UNKNOWN_ERROR';
+        debugPrint(
+            'NEXO auth login success=false endpoint=/auth/login failure_kind=${ApiClient.diagnosticFailureKind(exception)} status=${error!.statusCode ?? 'none'} code=$safeCode');
       }
       throw error!;
     } finally {
@@ -128,6 +113,104 @@ class AuthController extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  Future<void> register({
+    required String name,
+    required String email,
+    required String mobile,
+    required String password,
+  }) async {
+    if (signingIn) {
+      return;
+    }
+    signingIn = true;
+    error = null;
+    notifyListeners();
+    try {
+      await _authenticate('/auth/register', {
+        'name': name.trim(),
+        if (email.trim().isNotEmpty) 'email': email.trim(),
+        if (mobile.trim().isNotEmpty) 'mobile': mobile.trim(),
+        'password': password,
+      });
+    } catch (exception) {
+      error = _toApiError(exception);
+      throw error!;
+    } finally {
+      signingIn = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _authenticate(
+      String path, Map<String, dynamic> identityFields) async {
+    final deviceUuid = await api.deviceId();
+    final result = await api.post(path, body: {
+      ...identityFields,
+      'device_uuid': deviceUuid,
+      'device_name': 'NEXO Player',
+      'platform': defaultTargetPlatform.name,
+      'app_version': '0.1.0',
+    });
+    final token = result['token'];
+    final responseUser = result['user'];
+    final device = result['device'];
+    if (token is! String ||
+        token.isEmpty ||
+        responseUser is! Map<String, dynamic> ||
+        responseUser['id'] is! String ||
+        device is! Map<String, dynamic> ||
+        device['device_uuid'] != deviceUuid) {
+      throw const ApiError(code: 'INVALID_RESPONSE', message: '');
+    }
+    final typedProfile = UserProfile.fromJson(responseUser);
+    await api.saveToken(token);
+    if (await api.token() != token) {
+      throw const ApiError(code: 'AUTH_STORAGE_FAILED', message: '');
+    }
+    identity.authenticate(typedProfile.id, deviceUuid);
+    user = responseUser;
+    profile = typedProfile;
+  }
+
+  void applyProfile(UserProfile saved) {
+    profile = saved;
+    user = saved.toJson();
+    notifyListeners();
+  }
+
+  void _handleSessionExpiry() {
+    if (authenticated) {
+      _expireSession();
+    }
+  }
+
+  Future<void> _expireSession() async {
+    if (expiring) {
+      return;
+    }
+    expiring = true;
+    try {
+      await api.clearToken();
+      await database.clearCache();
+    } finally {
+      identity.clear();
+      user = null;
+      profile = null;
+      error = const ApiError(code: 'AUTHENTICATION_REQUIRED', message: '');
+      expiring = false;
+      notifyListeners();
+    }
+  }
+
+  ApiError _toApiError(Object exception) => exception is ApiError
+      ? exception
+      : ApiError(
+          code: ApiClient.isNetworkFailure(exception)
+              ? 'NETWORK_ERROR'
+              : 'AUTH_STORAGE_FAILED',
+          message: '',
+        );
 
   Future<bool> logout({bool discardPending = false}) async {
     final pending = (await outbox.all())
@@ -143,8 +226,15 @@ class AuthController extends ChangeNotifier {
       await api.clearToken();
       await database.clearCache();
       user = null;
+      profile = null;
       notifyListeners();
     }
     return true;
+  }
+
+  @override
+  void dispose() {
+    SessionExpiry.instance.removeListener(_handleSessionExpiry);
+    super.dispose();
   }
 }

@@ -68,7 +68,7 @@ class GameService
                 if ($oldStatus === 'ACTIVE' && ($input['status'] ?? 'ACTIVE') === 'DRAFT') {
                     throw new ApiException('STATE_TRANSITION_INVALID', 'Active games cannot return to draft.', [], 409);
                 }
-                $values = array_intersect_key($input, array_flip(['name', 'slug', 'description', 'status', 'default_timezone']));
+                $values = array_intersect_key($input, array_flip(['name', 'slug', 'description', 'city', 'status', 'default_timezone']));
                 if (isset($values['slug']) && Game::where('organization_id', $game->organization_id)->where('slug', $values['slug'])->when($game->exists, fn (Builder $q): Builder => $q->whereKeyNot($game->id))->exists()) {
                     throw ValidationException::withMessages(['slug' => 'This slug is already used in the organization.']);
                 }

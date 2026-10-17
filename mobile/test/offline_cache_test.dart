@@ -47,6 +47,7 @@ void main() {
     expect(identity.owner!.userId, 'user-b');
     expect(await cache.runtime('session-a'), isNull);
     expect(auth.user!['id'], 'user-b');
+    auth.dispose();
   });
 }
 
@@ -88,7 +89,7 @@ class AuthApi extends ReplayApi {
       path == '/auth/login'
           ? {
               'token': 'second-token',
-              'user': {'id': 'user-b'},
+              'user': {'id': 'user-b', 'name': 'بازیکن'},
               'device': {'device_uuid': await deviceId()}
             }
           : {};
