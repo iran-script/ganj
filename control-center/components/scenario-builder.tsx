@@ -12,12 +12,12 @@ import { NODE_CATALOG, NODE_GROUPS, nodeOutcomes, OUTCOME_LABELS } from '@/lib/n
 import type { ScenarioVariable } from '@/types/scenario';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useFieldArray, useForm } from 'react-hook-form';
 import { addEdge, Background, Controls, Handle, MarkerType, MiniMap, Position, ReactFlow, ReactFlowProvider, useEdgesState, useNodesState, useReactFlow, type Connection, type Edge, type Node, type NodeProps } from '@xyflow/react';
 import { Button, ConfirmDialog, EmptyState, ErrorState, LoadingState, PageHeader } from '@/components/ui';
 import { ApiErrorResponse } from '@/lib/api-error';
-import { canPublish, defaultScenarioConfig, nodeSummary, nodeValidation } from '@/lib/scenario-builder-utils';
+import { canPublish, defaultScenarioConfig, nodeSummary, nodeValidation, validationFromApiError, validationIssueText, validationIssuesForNode } from '@/lib/scenario-builder-utils';
 import { captureLayout, layoutScenario, type LayoutMode, type LayoutSnapshot } from '@/lib/scenario-layout';
 import { queries } from '@/lib/queries';
 import { scenarioApi } from '@/lib/scenario-api';
@@ -34,18 +34,38 @@ const nodeSchema = z.object({
   latitude: optionalNumber(z.number().min(-90).max(90)), longitude: optionalNumber(z.number().min(-180).max(180)),
   radius_m: optionalNumber(z.number().min(0.01).max(100000)), accuracy_m: optionalNumber(z.number().min(0.01).max(1000)),
   dwell_seconds: optionalNumber(z.number().int().min(0).max(86400)), max_attempts: optionalNumber(z.number().int().min(1).max(1000)),
-  trigger_id: z.string().uuid('شناسه QR باید UUID باشد').optional().or(z.literal('')), case_sensitive: z.boolean().optional(), trim_whitespace: z.boolean().optional(),
+  trigger_id: z.string().uuid('شناسه QR باید UUID باشد').optional().or(z.literal('')), checkpoint_id: z.string().uuid('شناسه نقطه باید UUID باشد').optional().or(z.literal('')), case_sensitive: z.boolean().optional(), trim_whitespace: z.boolean().optional(),
 });
 type NodeForm = z.infer<typeof nodeSchema>;
-type BuilderNodeData = { node: ScenarioNode; validation?: 'error' | 'warning' | 'ok' };
+const puzzleEditorSchema = z.object({
+  title: z.string().max(255, 'عنوان بیش از حد طولانی است'),
+  prompt: z.string().min(1, 'صورت سؤال الزامی است.').max(10000, 'صورت سؤال بیش از حد طولانی است.'),
+  expected_answer: z.string().min(1, 'پاسخ مورد انتظار الزامی است.').max(1000, 'پاسخ مورد انتظار بیش از حد طولانی است.'),
+  max_attempts: optionalNumber(z.number().int('تعداد تلاش باید عدد صحیح باشد.').min(1, 'حداقل تلاش ۱ است.').max(1000, 'حداکثر تلاش ۱۰۰۰ است.')),
+  case_sensitive: z.boolean(), trim_whitespace: z.boolean(), hints: z.array(z.string().max(2000, 'هر راهنما حداکثر ۲۰۰۰ نویسه است.')).max(3), offline_submission_allowed: z.boolean(),
+});
+type PuzzleEditorForm = z.infer<typeof puzzleEditorSchema>;
+const multipleChoiceEditorSchema = z.object({
+  title: z.string().max(255, 'عنوان بیش از حد طولانی است'),
+  prompt: z.string().min(1, 'صورت سؤال الزامی است.').max(10000, 'صورت سؤال بیش از حد طولانی است.'),
+  options: z.array(z.object({ ref: z.string().min(1, 'شناسه گزینه الزامی است.').max(100, 'شناسه گزینه بیش از حد طولانی است.'), text: z.string().min(1, 'متن گزینه الزامی است.').max(1000, 'متن گزینه بیش از حد طولانی است.') })).min(2, 'حداقل دو گزینه لازم است.').max(20, 'حداکثر ۲۰ گزینه مجاز است.'),
+  correct_option_refs: z.array(z.string()).min(1, 'حداقل یک گزینه صحیح انتخاب کنید.').max(20), multi_select: z.boolean(), offline_submission_allowed: z.boolean(),
+}).superRefine((value, context) => {
+  const refs = value.options.map((option) => option.ref);
+  if (new Set(refs).size !== refs.length) context.addIssue({ code: z.ZodIssueCode.custom, path: ['options'], message: 'شناسه گزینه‌ها باید یکتا باشد.' });
+  if (value.correct_option_refs.some((ref) => !refs.includes(ref))) context.addIssue({ code: z.ZodIssueCode.custom, path: ['correct_option_refs'], message: 'گزینه صحیح باید از گزینه‌های موجود باشد.' });
+  if (!value.multi_select && value.correct_option_refs.length !== 1) context.addIssue({ code: z.ZodIssueCode.custom, path: ['correct_option_refs'], message: 'در حالت تک‌انتخابی دقیقاً یک گزینه صحیح انتخاب کنید.' });
+});
+type MultipleChoiceEditorForm = z.infer<typeof multipleChoiceEditorSchema>;
+type BuilderNodeData = { node: ScenarioNode; validation?: 'error' | 'warning' | 'ok'; validationIssues?: Array<{ code: string; path: string }> };
 
 function NexoNode({ data, selected }: NodeProps<Node<BuilderNodeData>>) {
   const node = data.node;
-  const tone = data.validation === 'error' ? 'border-[var(--nexo-danger)]' : data.validation === 'warning' ? 'border-[var(--nexo-warning)]' : selected ? 'border-[var(--nexo-amber)]' : 'border-[var(--nexo-border)]';
+  const tone = data.validation === 'error' || data.validationIssues?.length ? 'border-[var(--nexo-danger)]' : data.validation === 'warning' ? 'border-[var(--nexo-warning)]' : selected ? 'border-[var(--nexo-amber)]' : 'border-[var(--nexo-border)]';
   return <div role="group" aria-label={`${SCENARIO_NODE_LABELS[node.node_type]}: ${node.title || SCENARIO_NODE_LABELS[node.node_type]}`} className={`min-w-[210px] rounded-xl border bg-[var(--nexo-elevated)] p-3 shadow-[var(--nexo-shadow)] ${selected ? 'ring-2 ring-[var(--nexo-amber)]/25' : ''} ${tone}`}>
     <Handle type="target" position={Position.Left} className="!h-2.5 !w-2.5 !border-2 !border-[var(--nexo-elevated)] !bg-[var(--nexo-info)]" />
     <div className="flex items-center gap-2"><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--nexo-amber-soft)] text-[var(--nexo-amber)]">{SCENARIO_NODE_ICONS[node.node_type]}</span><div className="min-w-0"><div className="text-[10px] tracking-wider text-[var(--nexo-muted)]">{SCENARIO_NODE_LABELS[node.node_type]}</div><div className="truncate font-bold">{node.title || SCENARIO_NODE_LABELS[node.node_type]}</div></div></div>
-    <div className="mt-3 truncate text-xs text-[var(--nexo-muted)]">{nodeSummary(node)}</div>
+    <div className="mt-3 truncate text-xs text-[var(--nexo-muted)]">{nodeSummary(node)}</div>{data.validationIssues?.map((issue) => <div key={`${issue.code}-${issue.path}`} role="alert" className="mt-2 rounded bg-[var(--nexo-danger)]/10 px-2 py-1 text-[10px] leading-5 text-[var(--nexo-danger)]">{validationIssueText(issue, node.node_key, 0)} <span className="opacity-70">{issue.path}</span></div>)}
     <div className="mt-3 flex items-center justify-between text-[10px]"><span className="text-[var(--nexo-muted)]">{node.node_key}</span>{data.validation === 'error' && <span className="rounded-full bg-[var(--nexo-danger)]/12 px-2 py-1 text-[var(--nexo-danger)]">خطا</span>}{data.validation === 'warning' && <span className="rounded-full bg-[var(--nexo-warning)]/12 px-2 py-1 text-[var(--nexo-warning)]">هشدار</span>}{data.validation === 'ok' && <span className="text-[var(--nexo-success)]">آماده</span>}</div>
     <Handle type="source" position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-[var(--nexo-elevated)] !bg-[var(--nexo-amber)]" />
   </div>;
@@ -55,7 +75,7 @@ const nodeTypes = { nexo: NexoNode };
 
 function toFlow(graph: ScenarioGraph, validation?: ScenarioValidation) {
   return {
-    nodes: graph.nodes.map((node, index) => ({ id: node.node_key, type: 'nexo', position: { x: node.position_x ?? index * 260, y: node.position_y ?? 120 + (index % 2) * 160 }, data: { node, validation: nodeValidation(node.node_key, graph.nodes, graph.edges, validation) } })),
+    nodes: graph.nodes.map((node, index) => ({ id: node.node_key, type: 'nexo', position: { x: node.position_x ?? index * 260, y: node.position_y ?? 120 + (index % 2) * 160 }, data: { node, validation: nodeValidation(node.node_key, graph.nodes, graph.edges, validation), validationIssues: validationIssuesForNode(node.node_key, index, graph.nodes, validation) } })),
     edges: graph.edges.map((edge) => ({ id: edge.edge_key, source: edge.from_node, target: edge.to_node, data: { metadata: edge.metadata ?? {} }, label: String(edge.metadata?.label ?? OUTCOME_LABELS[String(edge.metadata?.outcome)] ?? (edge.priority ? `اولویت ${edge.priority}` : '')), markerEnd: { type: MarkerType.ArrowClosed, color: '#e6ad42' }, style: { stroke: '#e6ad42', strokeWidth: 1.5 } })),
   };
 }
@@ -68,6 +88,24 @@ function fieldsFor(type: ScenarioNodeType): Array<{ name: keyof NodeForm; label:
   return [];
 }
 
+function PuzzleNodeEditor({ selected, readOnly, onChange }: { selected: ScenarioNode; readOnly: boolean; onChange: (node: ScenarioNode) => void }) {
+  const form = useForm<PuzzleEditorForm>({ resolver: zodResolver(puzzleEditorSchema), defaultValues: { title: selected.title ?? '', prompt: String(selected.config.prompt ?? ''), expected_answer: String(selected.config.expected_answer ?? ''), max_attempts: typeof selected.config.max_attempts === 'number' ? selected.config.max_attempts : undefined, case_sensitive: selected.config.case_sensitive === true, trim_whitespace: selected.config.trim_whitespace !== false, hints: Array.isArray(selected.config.hints) ? selected.config.hints.map(String).slice(0, 3) : [], offline_submission_allowed: selected.config.offline_submission_allowed === true } });
+  useEffect(() => { form.reset({ title: selected.title ?? '', prompt: String(selected.config.prompt ?? ''), expected_answer: String(selected.config.expected_answer ?? ''), max_attempts: typeof selected.config.max_attempts === 'number' ? selected.config.max_attempts : undefined, case_sensitive: selected.config.case_sensitive === true, trim_whitespace: selected.config.trim_whitespace !== false, hints: Array.isArray(selected.config.hints) ? selected.config.hints.map(String).slice(0, 3) : [], offline_submission_allowed: selected.config.offline_submission_allowed === true }); }, [selected, form]);
+  const submit = (values: PuzzleEditorForm) => { const config: Record<string, unknown> = { ...selected.config, prompt: values.prompt, expected_answer: values.expected_answer, case_sensitive: values.case_sensitive, trim_whitespace: values.trim_whitespace, offline_submission_allowed: values.offline_submission_allowed }; if (values.max_attempts === undefined) delete config.max_attempts; else config.max_attempts = values.max_attempts; const hints = values.hints.map((hint) => hint.trim()).filter(Boolean); if (hints.length) config.hints = hints; else delete config.hints; onChange({ ...selected, title: values.title || null, config }); };
+  return <form onSubmit={form.handleSubmit(submit)} className="space-y-4 p-5"><div><div className="text-xs text-[var(--nexo-amber)]">{SCENARIO_NODE_LABELS[selected.node_type]}</div><h2 className="mt-1 text-lg font-bold">ویرایش محتوای گره</h2><p className="mt-1 text-xs leading-6 text-[var(--nexo-muted)]">فیلدها مطابق schema واقعی Backend اعتبارسنجی می‌شوند.</p></div><label className="block text-sm">عنوان مرحله<input {...form.register('title')} disabled={readOnly} className="nexo-input mt-2" />{form.formState.errors.title && <span className="mt-1 block text-xs text-[var(--nexo-danger)]">{form.formState.errors.title.message}</span>}</label><label className="block text-sm">صورت سؤال<textarea {...form.register('prompt')} disabled={readOnly} className="nexo-input mt-2 min-h-24" />{form.formState.errors.prompt && <span className="mt-1 block text-xs text-[var(--nexo-danger)]">{form.formState.errors.prompt.message}</span>}</label><label className="block text-sm">پاسخ مورد انتظار<input {...form.register('expected_answer')} disabled={readOnly} className="nexo-input mt-2" />{form.formState.errors.expected_answer && <span className="mt-1 block text-xs text-[var(--nexo-danger)]">{form.formState.errors.expected_answer.message}</span>}</label><label className="block text-sm">حداکثر تلاش (اختیاری)<input {...form.register('max_attempts')} type="number" min="1" max="1000" disabled={readOnly} className="nexo-input mt-2" />{form.formState.errors.max_attempts && <span className="mt-1 block text-xs text-[var(--nexo-danger)]">{form.formState.errors.max_attempts.message}</span>}</label><div className="space-y-2 text-sm"><label className="flex gap-2"><input type="checkbox" {...form.register('case_sensitive')} disabled={readOnly} />حساس به بزرگی حروف</label><label className="flex gap-2"><input type="checkbox" {...form.register('trim_whitespace')} disabled={readOnly} />حذف فاصله‌های ابتدا و انتها</label><label className="flex gap-2"><input type="checkbox" {...form.register('offline_submission_allowed')} disabled={readOnly} />ارسال آفلاین مجاز</label></div><fieldset className="space-y-2"><legend className="text-sm">راهنماها (اختیاری، حداکثر ۳ مورد)</legend>{[0, 1, 2].map((index) => <label key={index} className="block text-sm">راهنمایی {index + 1}<textarea {...form.register(`hints.${index}`)} disabled={readOnly} maxLength={2000} className="nexo-input mt-2" /></label>)}</fieldset>{!readOnly && <Button type="submit">اعمال تغییرات</Button>}</form>;
+}
+
+function MultipleChoiceNodeEditor({ selected, readOnly, onChange }: { selected: ScenarioNode; readOnly: boolean; onChange: (node: ScenarioNode) => void }) {
+  const options = useMemo(() => selected.config.options && typeof selected.config.options === 'object' && !Array.isArray(selected.config.options) ? Object.entries(selected.config.options as Record<string, unknown>).map(([ref, text]) => ({ ref, text: String(text) })) : [{ ref: 'A', text: '' }, { ref: 'B', text: '' }], [selected]);
+  const form = useForm<MultipleChoiceEditorForm>({ resolver: zodResolver(multipleChoiceEditorSchema), defaultValues: { title: selected.title ?? '', prompt: String(selected.config.prompt ?? ''), options, correct_option_refs: Array.isArray(selected.config.correct_option_refs) ? selected.config.correct_option_refs.map(String) : [], multi_select: selected.config.multi_select === true, offline_submission_allowed: selected.config.offline_submission_allowed === true } });
+  const optionFields = useFieldArray({ control: form.control, name: 'options' });
+  useEffect(() => { form.reset({ title: selected.title ?? '', prompt: String(selected.config.prompt ?? ''), options, correct_option_refs: Array.isArray(selected.config.correct_option_refs) ? selected.config.correct_option_refs.map(String) : [], multi_select: selected.config.multi_select === true, offline_submission_allowed: selected.config.offline_submission_allowed === true }); }, [selected, form, options]);
+  const selectedRefs = form.watch('correct_option_refs');
+  const toggleCorrect = (ref: string) => form.setValue('correct_option_refs', selectedRefs.includes(ref) ? selectedRefs.filter((item) => item !== ref) : [...selectedRefs, ref], { shouldValidate: true });
+  const submit = (values: MultipleChoiceEditorForm) => onChange({ ...selected, title: values.title || null, config: { ...selected.config, prompt: values.prompt, options: Object.fromEntries(values.options.map((option) => [option.ref, option.text])), correct_option_refs: values.correct_option_refs, multi_select: values.multi_select, offline_submission_allowed: values.offline_submission_allowed } });
+  return <form onSubmit={form.handleSubmit(submit)} className="space-y-4 p-5"><div><div className="text-xs text-[var(--nexo-amber)]">{SCENARIO_NODE_LABELS[selected.node_type]}</div><h2 className="mt-1 text-lg font-bold">ویرایش محتوای گره</h2><p className="mt-1 text-xs leading-6 text-[var(--nexo-muted)]">کلید گزینه‌ها همان شناسه‌ای است که Backend برای پاسخ صحیح استفاده می‌کند.</p></div><label className="block text-sm">عنوان مرحله<input {...form.register('title')} disabled={readOnly} className="nexo-input mt-2" /></label><label className="block text-sm">صورت سؤال<textarea {...form.register('prompt')} disabled={readOnly} className="nexo-input mt-2 min-h-24" />{form.formState.errors.prompt && <span className="mt-1 block text-xs text-[var(--nexo-danger)]">{form.formState.errors.prompt.message}</span>}</label><fieldset className="space-y-3"><legend className="text-sm">گزینه‌ها (۲ تا ۲۰)</legend>{optionFields.fields.map((field, index) => <div key={field.id} className="grid grid-cols-[90px_1fr_auto] items-start gap-2"><label className="text-sm">شناسه<input {...form.register(`options.${index}.ref`)} disabled={readOnly} className="nexo-input mt-2" /></label><label className="text-sm">متن گزینه<textarea {...form.register(`options.${index}.text`)} disabled={readOnly} className="nexo-input mt-2" /></label><label className="mt-8 flex items-center gap-2 text-xs"><input type="checkbox" checked={selectedRefs.includes(form.watch(`options.${index}.ref`))} disabled={readOnly} onChange={() => toggleCorrect(form.getValues(`options.${index}.ref`))} />صحیح</label>{(form.formState.errors.options?.[index]?.ref || form.formState.errors.options?.[index]?.text) && <span className="col-span-3 text-xs text-[var(--nexo-danger)]">شناسه و متن گزینه الزامی است.</span>}</div>)}{form.formState.errors.options?.root && <p className="text-xs text-[var(--nexo-danger)]">{form.formState.errors.options.root.message}</p>}{!readOnly && <Button variant="secondary" onClick={() => optionFields.append({ ref: `O${optionFields.fields.length + 1}`, text: '' })}>افزودن گزینه</Button>}</fieldset>{form.formState.errors.correct_option_refs && <p className="text-xs text-[var(--nexo-danger)]">{form.formState.errors.correct_option_refs.message}</p>}<div className="space-y-2 text-sm"><label className="flex gap-2"><input type="checkbox" {...form.register('multi_select')} disabled={readOnly} />انتخاب چند پاسخ صحیح</label><label className="flex gap-2"><input type="checkbox" {...form.register('offline_submission_allowed')} disabled={readOnly} />ارسال آفلاین مجاز</label></div>{!readOnly && <Button type="submit">اعمال تغییرات</Button>}</form>;
+}
+
 function Inspector({ selected, readOnly, onChange }: { selected?: ScenarioNode; readOnly: boolean; onChange: (node: ScenarioNode) => void }) {
   const fields = selected ? fieldsFor(selected.node_type) : [];
   const form = useForm<NodeForm>({ resolver: zodResolver(nodeSchema), defaultValues: { title: selected?.title ?? '', ...(selected?.config as Partial<NodeForm>) } });
@@ -77,6 +115,8 @@ function Inspector({ selected, readOnly, onChange }: { selected?: ScenarioNode; 
   const [activeOnly, setActiveOnly] = useState(true);
   useEffect(() => { form.reset({ title: selected?.title ?? '', ...(selected?.config as Partial<NodeForm>) }); }, [selected, form]);
   if (!selected) return <div className="flex h-full items-center justify-center p-6 text-center text-sm text-[var(--nexo-muted)]">برای ویرایش، یک گره را انتخاب کنید.</div>;
+  if (selected.node_type === 'Password' || selected.node_type === 'Text Answer') return <PuzzleNodeEditor selected={selected} readOnly={readOnly} onChange={onChange} />;
+  if (selected.node_type === 'Multiple Choice') return <MultipleChoiceNodeEditor selected={selected} readOnly={readOnly} onChange={onChange} />;
   const submit = (values: NodeForm) => {
     if (selected.node_type === 'GPS / Location' && (values.latitude === undefined || values.longitude === undefined || values.radius_m === undefined)) {
       if (values.latitude === undefined) form.setError('latitude', { message: 'عرض جغرافیایی الزامی است.' });
@@ -87,7 +127,9 @@ function Inspector({ selected, readOnly, onChange }: { selected?: ScenarioNode; 
     const config: Record<string, unknown> = { ...selected.config };
     fields.forEach(({ name }) => { const value = values[name]; if (value !== '' && value !== undefined) config[name] = value; else delete config[name]; });
     if (selected.node_type === 'Puzzle') Object.assign(config, { case_sensitive: values.case_sensitive ?? false, trim_whitespace: values.trim_whitespace ?? true });
-    if (selected.node_type === 'GPS / Location') delete config.checkpoint_id;
+    if (selected.node_type === 'GPS / Location' && values.checkpoint_id) config.checkpoint_id = values.checkpoint_id;
+    if (selected.node_type === 'GPS / Location' && !values.checkpoint_id && selected.config.checkpoint_id) delete config.checkpoint_id;
+    if (selected.node_type === 'GPS / Location' && selected.config.checkpoint_id && (values.latitude !== selected.config.latitude || values.longitude !== selected.config.longitude || values.radius_m !== selected.config.radius_m)) delete config.checkpoint_id;
     onChange({ ...selected, title: values.title || null, config });
   };
   const triggerSelect = <select {...form.register('trigger_id')} value={form.watch('trigger_id') ?? ''} disabled={readOnly || triggers.isPending} className="nexo-input"><option value="">انتخاب تریگر فعال</option>{triggers.data?.filter((item) => ((!activeOnly || item.status === 'ACTIVE') && String(item.metadata?.label ?? '').toLowerCase().includes(resourceSearch.toLowerCase())) || item.id === form.watch('trigger_id')).map((item) => <option key={item.id} value={item.id} disabled={item.status !== 'ACTIVE'}>{item.status !== 'ACTIVE' ? 'غیرفعال • ' : ''}{typeof item.metadata?.label === 'string' ? item.metadata.label : `تریگر ${item.id.slice(0, 8)}`}</option>)}</select>;
@@ -150,6 +192,16 @@ export function ScenarioBuilder({ scenarioId, versionId, readOnly = false }: { s
   const validate = useMutation({ mutationFn: () => scenarioApi.validate(activeVersion as string, graph.data?.revision_token ?? version.data?.revision_token ?? ''), onSuccess: (result) => { setValidation(result); setMessage(result.status === 'PASS' ? 'اعتبارسنجی موفق بود.' : 'گراف نیاز به اصلاح دارد.'); }, onError: (error) => setMessage(error instanceof ApiErrorResponse ? error.message : 'اعتبارسنجی انجام نشد.') });
   const publish = useMutation({ mutationFn: () => scenarioApi.publish(activeVersion as string, graph.data?.revision_token ?? version.data?.revision_token ?? ''), onSuccess: () => { setConfirmPublishState(false); setMessage('نسخه منتشر شد.'); client.invalidateQueries({ queryKey: ['scenario-version', activeVersion] }); client.invalidateQueries({ queryKey: ['scenarios', scenarioId] }); }, onError: (error) => setMessage(error instanceof ApiErrorResponse ? error.message : 'انتشار نسخه انجام نشد.') });
   const simulate = useMutation({ mutationFn: () => scenarioApi.simulate(activeVersion as string, graph.data?.revision_token ?? version.data?.revision_token ?? ''), onSuccess: (result) => { setSimulation(result); }, onError: (error) => setMessage(error instanceof ApiErrorResponse ? error.message : 'شبیه‌سازی انجام نشد.') });
+  useEffect(() => {
+    const backendValidation = validationFromApiError(save.error) ?? validationFromApiError(validate.error);
+    if (!backendValidation) return;
+    setValidation(backendValidation);
+    setMessage('اعتبارسنجی Backend ناموفق بود؛ خطاهای گره‌ها را بررسی کنید.');
+    setNodes((current) => {
+      const currentGraph = current.map((item) => item.data.node);
+      return current.map((item, index) => ({ ...item, data: { ...item.data, validationIssues: validationIssuesForNode(item.id, index, currentGraph, backendValidation) } }));
+    });
+  }, [save.error, validate.error, setNodes]);
   if (scenario.isPending || versions.isPending || (activeVersion && (version.isPending || graph.isPending))) return <LoadingState label="در حال آماده‌سازی سازنده سناریو..." />;
   if (scenario.isError || versions.isError || version.isError || graph.isError) return <ErrorState message="اطلاعات سناریو بارگذاری نشد." onRetry={() => { void scenario.refetch(); void versions.refetch(); void graph.refetch(); }} />;
   if (!activeVersion) return <EmptyState title="نسخه پیش‌نویس وجود ندارد" description="برای این سناریو ابتدا یک نسخه پیش‌نویس ایجاد کنید." />;

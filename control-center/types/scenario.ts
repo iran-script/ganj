@@ -1,7 +1,7 @@
 import { NODE_CATALOG } from '@/lib/node-catalog';
 
 export type ScenarioStatus = 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
-export type ScenarioNodeType = 'Start' | 'Message' | 'GPS / Location' | 'QR' | 'Puzzle' | 'Finish' | 'MediaReveal' | 'Time' | 'Condition' | 'SetVariable' | 'CheckVariable' | 'Score' | 'RoleCheck' | 'AssignRole' | 'RandomPlayer' | 'SplitInformation' | 'TeamTogether' | 'Barrier' | 'Relay' | 'LiveChallenge' | 'PhotoSubmission' | 'AudioSubmission' | 'FileSubmission';
+export type ScenarioNodeType = 'Start' | 'Message' | 'GPS / Location' | 'QR' | 'Puzzle' | 'Password' | 'Text Answer' | 'Multiple Choice' | 'Finish' | 'MediaReveal' | 'Time' | 'Condition' | 'SetVariable' | 'CheckVariable' | 'Score' | 'RoleCheck' | 'AssignRole' | 'RandomPlayer' | 'SplitInformation' | 'TeamTogether' | 'Barrier' | 'Relay' | 'LiveChallenge' | 'PhotoSubmission' | 'AudioSubmission' | 'FileSubmission';
 export type ScenarioVariable = { key: string; type: 'STRING' | 'INTEGER' | 'BOOLEAN'; scope: 'TEAM'; default_value: string | number | boolean; writable: boolean };
 
 export type Scenario = { id: string; organization_id?: string; title: string; description?: string | null; theme?: string | null; status: ScenarioStatus; created_at?: string; updated_at?: string; archived_at?: string | null };

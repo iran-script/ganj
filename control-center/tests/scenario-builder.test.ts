@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { canPublish, defaultScenarioConfig, hasValidEdgeReferences, nodeSummary, nodeValidation } from '@/lib/scenario-builder-utils';
+import { ApiErrorResponse } from '@/lib/api-error';
+import { canPublish, defaultScenarioConfig, hasValidEdgeReferences, nodeSummary, nodeValidation, validationField, validationFromApiError, validationIssuesForNode } from '@/lib/scenario-builder-utils';
 import type { ScenarioNode } from '@/types/scenario';
 
 const nodes: ScenarioNode[] = [{ node_key: 'start', node_type: 'Start', config: {} }, { node_key: 'finish', node_type: 'Finish', config: {} }];
@@ -40,5 +41,18 @@ describe('scenario builder foundation', () => {
 
   it('keeps saved checkpoints optional helpers for GPS nodes', () => {
     expect(nodeSummary({ node_key: 'gps', node_type: 'GPS / Location', config: { checkpoint_id: 'opaque-resource-id', latitude: 35, longitude: 51, radius_m: 10 } })).toContain('شعاع 10 متر');
+  });
+
+  it('maps Backend node paths to the affected field and preserves indexed issues', () => {
+    const validation = { status: 'FAIL' as const, errors: [{ code: 'INVALID_NODE_CONFIG', path: 'nodes.0.config.prompt' }], warnings: [] };
+    expect(validationField('nodes.0.config.prompt', 'start', 0)).toBe('prompt');
+    expect(validationIssuesForNode('start', 0, nodes, validation)).toEqual(validation.errors);
+    expect(validationIssuesForNode('finish', 1, nodes, validation)).toEqual([]);
+  });
+
+  it('extracts graph validation details from a Laravel API error', () => {
+    const error = new ApiErrorResponse(422, 'VALIDATION_FAILED', 'The graph is structurally invalid.', { status: 'FAIL', errors: [{ code: 'INVALID_NODE_CONFIG', path: 'nodes.0.config.prompt' }], warnings: [] });
+    expect(validationFromApiError(error)).toEqual({ status: 'FAIL', errors: [{ code: 'INVALID_NODE_CONFIG', path: 'nodes.0.config.prompt' }], warnings: [] });
+    expect(validationFromApiError(new Error('network'))).toBeUndefined();
   });
 });

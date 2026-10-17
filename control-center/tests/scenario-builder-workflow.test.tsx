@@ -13,7 +13,7 @@ vi.mock('@xyflow/react', async (importOriginal) => {
   return { ...actual, ReactFlow: ({ nodes, onNodeClick }: { nodes: Array<{ id: string }>; onNodeClick: (event: null, node: { id: string }) => void }) => <div>{nodes.map((node) => <button key={node.id} onClick={() => onNodeClick(null, node)}>select {node.id}</button>)}</div> };
 });
 vi.mock('@/lib/scenario-api', () => ({ scenarioApi: { get: vi.fn(), versions: vi.fn(), version: vi.fn(), graph: vi.fn(), saveGraph: vi.fn(), validate: vi.fn(), publish: vi.fn(), simulate: vi.fn() } }));
-vi.mock('@/lib/queries', async (importOriginal) => ({ queries: { ...(await importOriginal<typeof import('@/lib/queries')>()).queries, checkpoints: () => ({ queryKey: ['checkpoints'], queryFn: async () => [] }) } }));
+vi.mock('@/lib/queries', async (importOriginal) => ({ queries: { ...(await importOriginal<typeof import('@/lib/queries')>()).queries, checkpoints: vi.fn(() => ({ queryKey: ['checkpoints'], queryFn: async () => [] })) } }));
 vi.mock('@/lib/content-api', () => ({ contentApi: { qr: vi.fn(async () => []), locations: vi.fn(async () => []), media: vi.fn(async () => []) } }));
 
 const validation = { status: 'PASS' as const, errors: [], warnings: [] };
@@ -35,6 +35,7 @@ beforeEach(() => {
   vi.mocked(scenarioApi.simulate).mockResolvedValue({ ...validation, mode: 'STRUCTURAL_ONLY', runtime_executed: false, revision_token: 'saved-revision', reachable_nodes: [], branches: [], dead_ends: [] });
 });
 afterEach(cleanup);
+it('selects an active Point checkpoint and persists its verified reference', async () => { vi.mocked(queries.checkpoints).mockReturnValue({ queryKey: ['checkpoints'], queryFn: async () => [{ id: 'checkpoint', organization_id: 'org', name: 'North Point', type: 'POINT', geom: { type: 'Point', coordinates: [51.4, 35.7] }, radius_meters: 40, status: 'ACTIVE' }] } as never); mountBuilder(); await userEvent.click(await screen.findByRole('button', { name: 'select gps' })); const picker = await screen.findByRole('combobox', { name: /Checkpoint/ }); await userEvent.selectOptions(picker, 'checkpoint'); await userEvent.click(screen.getAllByRole('button', { name: /اعمال/ })[0]); await userEvent.click(screen.getByRole('button', { name: /Draft/ })); await waitFor(() => expect(scenarioApi.saveGraph).toHaveBeenCalled()); const saved = vi.mocked(scenarioApi.saveGraph).mock.calls[0][1] as ScenarioGraphResponse['graph']; expect(saved.nodes.find((node) => node.node_key === 'gps')).toMatchObject({ config: { checkpoint_id: 'checkpoint', latitude: 35.7, longitude: 51.4, radius_m: 40 } }); });
 
 it('copies bank coordinates and policy into an independent GPS snapshot', async () => {
   vi.mocked(contentApi.locations).mockResolvedValue([{ id: 'location', organization_id: 'org', name: 'Saved square', latitude: 35.5, longitude: 51.5, default_radius_m: 30, accuracy_m: 5, dwell_seconds: 10, category: '', description: '', status: 'ACTIVE' }]);
@@ -183,4 +184,55 @@ it('renders auto layout controls, marks the draft dirty, restores positions, and
   expect(saved.nodes.map((node) => node.config)).toEqual(graph.graph.nodes.map((node) => node.config));
   expect(saved.edges).toHaveLength(graph.graph.edges.length);
   expect(saved.edges[0]).toMatchObject(graph.graph.edges[0]);
+});
+
+it('edits Password and Text Answer nodes with the shared Backend puzzle schema', async () => {
+  graph.graph.nodes = [
+    { node_key: 'password', node_type: 'Password', title: 'کلمه عبور', config: { prompt: 'قدیمی', expected_answer: 'نکسو', case_sensitive: false, trim_whitespace: true, offline_submission_allowed: true, custom_policy: 'preserve' } },
+    { node_key: 'answer', node_type: 'Text Answer', title: 'پاسخ متنی', config: { prompt: 'پاسخ بده', expected_answer: 'تهران', case_sensitive: true, trim_whitespace: true, hints: ['راهنما'] } },
+  ];
+  mountBuilder();
+  await userEvent.click(await screen.findByRole('button', { name: 'select password' }));
+  fireEvent.change(screen.getByLabelText('صورت سؤال'), { target: { value: 'صورت جدید' } });
+  fireEvent.change(screen.getByLabelText('پاسخ مورد انتظار'), { target: { value: 'پاسخ جدید' } });
+  await userEvent.click(screen.getByRole('button', { name: 'اعمال تغییرات' }));
+  await userEvent.click(screen.getByRole('button', { name: 'ذخیره Draft' }));
+  await waitFor(() => expect(scenarioApi.saveGraph).toHaveBeenCalled());
+  const saved = vi.mocked(scenarioApi.saveGraph).mock.calls[0][1];
+  expect(saved.nodes).toEqual(expect.arrayContaining([expect.objectContaining({ node_key: 'password', node_type: 'Password', config: expect.objectContaining({ prompt: 'صورت جدید', expected_answer: 'پاسخ جدید', custom_policy: 'preserve', offline_submission_allowed: true }) })]));
+
+  vi.clearAllMocks();
+  cleanup();
+  vi.mocked(scenarioApi.graph).mockResolvedValue(graph);
+  mountBuilder();
+  await userEvent.click(await screen.findByRole('button', { name: 'select answer' }));
+  expect(screen.getByLabelText('راهنمایی 1')).toHaveValue('راهنما');
+  fireEvent.change(screen.getByLabelText('صورت سؤال'), { target: { value: '' } });
+  await userEvent.click(screen.getByRole('button', { name: 'اعمال تغییرات' }));
+  expect(screen.getByText('صورت سؤال الزامی است.')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'ذخیره Draft' })).toBeDisabled();
+});
+
+it('edits Multiple Choice options and serializes the Backend options map', async () => {
+  graph.graph.nodes = [{ node_key: 'choice', node_type: 'Multiple Choice', config: { prompt: 'انتخاب کن', options: { A: 'اول', B: 'دوم' }, correct_option_refs: ['A'], multi_select: false, offline_submission_allowed: false } }];
+  mountBuilder();
+  await userEvent.click(await screen.findByRole('button', { name: 'select choice' }));
+  fireEvent.change(screen.getAllByLabelText('متن گزینه')[1], { target: { value: 'دوم ویرایش‌شده' } });
+  await userEvent.click(screen.getByRole('button', { name: 'اعمال تغییرات' }));
+  await userEvent.click(screen.getByRole('button', { name: 'ذخیره Draft' }));
+  await waitFor(() => expect(scenarioApi.saveGraph).toHaveBeenCalled());
+  expect(vi.mocked(scenarioApi.saveGraph).mock.calls[0][1].nodes).toEqual(expect.arrayContaining([expect.objectContaining({ node_type: 'Multiple Choice', config: { prompt: 'انتخاب کن', options: { A: 'اول', B: 'دوم ویرایش‌شده' }, correct_option_refs: ['A'], multi_select: false, offline_submission_allowed: false } })]));
+});
+
+it('keeps all puzzle editor controls read-only for a published version', async () => {
+  graph.graph.nodes = [{ node_key: 'password', node_type: 'Password', config: { prompt: 'قفل', expected_answer: 'پاسخ', case_sensitive: false, trim_whitespace: true } }];
+  const published = { id: 'version', status: 'PUBLISHED', version_no: 1, revision_token: 'old-revision' } as ScenarioVersion;
+  vi.mocked(scenarioApi.version).mockResolvedValue(published);
+  vi.mocked(scenarioApi.versions).mockResolvedValue([published]);
+  mountBuilder();
+  await userEvent.click(await screen.findByRole('button', { name: 'select password' }));
+  expect(screen.getByLabelText('صورت سؤال')).toBeDisabled();
+  expect(screen.getByLabelText('پاسخ مورد انتظار')).toBeDisabled();
+  expect(screen.queryByRole('button', { name: 'اعمال تغییرات' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'ذخیره Draft' })).not.toBeInTheDocument();
 });

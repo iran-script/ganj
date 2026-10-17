@@ -1,6 +1,44 @@
 import type { ScenarioEdge, ScenarioNode, ScenarioNodeType, ScenarioValidation } from '@/types/scenario';
 import { SCENARIO_NODE_LABELS } from '@/types/scenario';
 import { NODE_CATALOG } from '@/lib/node-catalog';
+import { ApiErrorResponse } from '@/lib/api-error';
+
+export type ScenarioValidationIssue = { code: string; path: string };
+
+export function validationIssuesForNode(nodeKey: string, nodeIndex: number, nodes: ScenarioNode[], validation?: ScenarioValidation): ScenarioValidationIssue[] {
+  if (!validation) return [];
+  const applies = ({ path }: ScenarioValidationIssue) => {
+    const [, identity] = path.split('.');
+    return identity === nodeKey || (/^\d+$/.test(identity ?? '') && Number(identity) === nodeIndex) || (/^\d+$/.test(identity ?? '') && nodes[Number(identity)]?.node_key === nodeKey);
+  };
+  return [...validation.errors, ...validation.warnings].filter(applies);
+}
+
+export function validationField(path: string, nodeKey: string, nodeIndex: number): string | undefined {
+  const parts = path.split('.');
+  if (parts[0] !== 'nodes') return undefined;
+  const identity = parts[1];
+  if (identity !== nodeKey && (!/^\d+$/.test(identity ?? '') || Number(identity) !== nodeIndex)) return undefined;
+  const configIndex = parts.indexOf('config');
+  return configIndex >= 0 && parts[configIndex + 1] ? parts[configIndex + 1] : undefined;
+}
+
+export function validationIssueText(issue: ScenarioValidationIssue, nodeKey?: string, nodeIndex?: number): string {
+  const field = nodeKey !== undefined && nodeIndex !== undefined ? validationField(issue.path, nodeKey, nodeIndex) : issue.path.split('.').includes('config') ? issue.path.split('.')[issue.path.split('.').indexOf('config') + 1] : undefined;
+  return field ? `خطای Backend در فیلد ${field} (${issue.code})` : `خطای اعتبارسنجی Backend (${issue.code})`;
+}
+
+export function validationFromApiError(error: unknown): ScenarioValidation | undefined {
+  if (!(error instanceof ApiErrorResponse) || !error.details) return undefined;
+  const details = error.details as { status?: unknown; errors?: unknown; warnings?: unknown };
+  if (!Array.isArray(details.errors)) return undefined;
+  const issue = (value: unknown): value is ScenarioValidationIssue => typeof value === 'object' && value !== null && typeof (value as { code?: unknown }).code === 'string' && typeof (value as { path?: unknown }).path === 'string';
+  return {
+    status: details.status === 'PASS' ? 'PASS' : 'FAIL',
+    errors: details.errors.filter(issue),
+    warnings: Array.isArray(details.warnings) ? details.warnings.filter(issue) : [],
+  };
+}
 
 export function defaultScenarioConfig(type: ScenarioNodeType): Record<string, unknown> {
   return structuredClone(NODE_CATALOG[type].defaults);
@@ -54,5 +92,7 @@ export function nodeSummary(node: ScenarioNode): string {
   }
   if (node.node_type === 'QR') return config.trigger_id ? node.title || 'QR انتخاب‌شده' : 'نیازمند تنظیم QR';
   if (node.node_type === 'Puzzle') return config.expected_answer ? `پاسخ متنی • ${config.max_attempts ?? 'بدون محدودیت'} تلاش` : 'معما هنوز تنظیم نشده';
+  if (node.node_type === 'Password' || node.node_type === 'Text Answer') return config.expected_answer ? 'پاسخ متنی تنظیم شده' : 'پاسخ هنوز تنظیم نشده';
+  if (node.node_type === 'Multiple Choice') return `${Object.keys((config.options as Record<string, unknown>) ?? {}).length} گزینه`;
   return SCENARIO_NODE_LABELS[node.node_type];
 }

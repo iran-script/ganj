@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui';
+import { PuzzleNodeEditor } from '@/components/puzzle-node-editor';
 import { NODE_CATALOG, RUNTIME_ROLES } from '@/lib/node-catalog';
 import { contentApi } from '@/lib/content-api';
 import type { ScenarioNode, ScenarioVariable } from '@/types/scenario';
@@ -12,6 +13,7 @@ export function AdvancedNodeInspector({ selected, readOnly, variables, onChange 
   const [error, setError] = useState('');
   const media = useQuery({ queryKey: ['content-media'], queryFn: contentApi.media, enabled: selected.node_type === 'MediaReveal' });
   useEffect(() => { setDraft(selected); setError(''); }, [selected]);
+  if (selected.node_type === 'Password' || selected.node_type === 'Text Answer' || selected.node_type === 'Multiple Choice') return <PuzzleNodeEditor selected={selected} readOnly={readOnly} onChange={onChange} />;
   const definition = NODE_CATALOG[draft.node_type];
   const config = draft.config;
   const set = (key: string, value: unknown) => setDraft((current) => ({ ...current, config: { ...current.config, [key]: value } }));

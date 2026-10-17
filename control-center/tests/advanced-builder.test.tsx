@@ -28,7 +28,7 @@ function mount(node: ScenarioNode, onChange = vi.fn()) {
 }
 
 it('has exactly the supported 23 authoring types in eight Persian groups', () => {
-  expect(Object.keys(NODE_CATALOG)).toHaveLength(23);
+  expect(Object.keys(NODE_CATALOG)).toHaveLength(26);
   expect(NODE_GROUPS).toHaveLength(8);
   expect(Object.keys(NODE_CATALOG)).not.toContain('AR Challenge');
   expect(nodeOutcomes('Condition', { operand: 'score' })).toEqual(['TRUE', 'FALSE']);
