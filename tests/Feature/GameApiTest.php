@@ -22,7 +22,7 @@ class GameApiTest extends TestCase
         OrganizationMember::factory()->administrator()->create(['organization_id' => $org->id, 'user_id' => $actor->id]);
         $this->authenticateGame($actor);
         $data = ['organization_id' => $org->public_id, 'name' => 'NEXO walk', 'slug' => 'nexo-walk', 'default_timezone' => 'Asia/Tehran'];
-        $result = $this->postJson('/api/v1/games', $data)->assertCreated()->assertJsonPath('data.status', 'DRAFT')->assertJsonPath('data.organization_id', $org->public_id);
+        $result = $this->postJson('/api/v1/games', $data)->assertCreated()->assertJsonPath('data.status', 'DRAFT')->assertJsonPath('data.organization_id', $org->public_id)->assertJsonPath('data.organization.id', $org->public_id)->assertJsonPath('data.organization.name', $org->name)->assertJsonPath('data.pricing', null)->assertJsonPath('data.scenario', null);
         $id = $result->json('data.id');
         $this->assertNotSame((string) Game::sole()->id, $id);
         $this->patchJson('/api/v1/games/'.$id, ['status' => 'ACTIVE', 'description' => 'An urban adventure'])->assertOk()->assertJsonPath('data.status', 'ACTIVE');

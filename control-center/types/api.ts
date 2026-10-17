@@ -25,6 +25,8 @@ export type Organization = { id: string; name?: string; title?: string; status?:
 
 export type Game = {
   id: string;
+  organization_id?: string;
+  organization?: { id: string; name?: string; status?: string } | null;
   title?: string;
   name?: string;
   slug?: string;
@@ -34,14 +36,17 @@ export type Game = {
   pricing_type?: string;
   pricing?: { mode?: 'FREE' | 'PAID'; amount?: number; currency?: string } | null;
   scenario_version_id?: string | null;
+  scenario?: { id: string; title?: string; status?: string; version_no?: number; version_id?: string } | null;
+  city?: string | null;
+  archived_at?: string | null;
   updated_at?: string;
-  scenario?: { id: string; title?: string; status?: string } | null;
 };
 
 export type SessionStatus = 'DRAFT' | 'REGISTRATION' | 'READY' | 'RUNNING' | 'PAUSED' | 'FINISHED' | 'CANCELLED';
 
 export type GameSession = {
   id: string;
+  organization_id?: string;
   game_id?: string;
   title?: string;
   status: SessionStatus;
@@ -62,7 +67,10 @@ export type GameSession = {
   teams?: SessionTeam[];
 };
 
-export type Team = { id: string; name?: string; status?: string; member_count?: number; readiness?: string; device_status?: string; session_id?: string | null; session?: { id?: string; title?: string } | null; runtime?: { current_node?: string | null; status?: string } | null; score?: { score?: number } | null; members?: SessionPlayer[]; players?: SessionPlayer[]; updated_at?: string | null };
+export type Team = { id: string; name?: string; status?: string; member_count?: number; readiness?: string; device_status?: string; session_id?: string | null; session?: { id?: string; title?: string } | null; runtime?: { current_node?: string | null; status?: string } | null; score?: { score?: number } | null; members?: SessionPlayer[]; players?: SessionPlayer[]; updated_at?: string | null; captain_user_id?: string; captain?: { id?: string; name?: string } | null; eligible_for_game?: boolean; organization?: { id: string; name?: string } | null; archived_at?: string | null; created_at?: string | null };
+
+export type RoomTeam = { id: string; name?: string; captain?: string | null; member_count?: number; eligible?: boolean; actor_is_member?: boolean; can_add_to_room?: boolean };
+export type Room = { id: string; game_id: string; game_name?: string; city?: string | null; name: string; status: 'OPEN' | 'FULL' | 'CLOSED' | string; session_status?: SessionStatus | null; capacity: number; team_count: number; teams?: RoomTeam[]; created_at?: string | null };
 
 export type SessionPlayer = { id: string; name?: string; user?: { id: string; name: string }; status?: string; presence?: string | null; device_bound?: boolean; device_last_seen_at?: string | null };
 export type Device = { id: string; public_id?: string; name?: string; platform?: string; status?: string; last_seen_at?: string | null; user?: { id: string; name?: string } | null; readiness?: string };

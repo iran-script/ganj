@@ -6,6 +6,7 @@ export type CreateGameInput = {
   name: string;
   slug: string;
   description?: string;
+  city?: string;
   default_timezone: string;
   status: 'DRAFT' | 'ACTIVE';
   pricing?: { mode: 'FREE' | 'PAID'; amount?: number; currency?: string };
@@ -15,4 +16,6 @@ export type CreateGameInput = {
 
 export const gameApi = {
   create: (body: CreateGameInput) => api.post<Game>('/games', body, { headers: { 'Idempotency-Key': `control-game-${crypto.randomUUID()}` } }),
+  update: (id: string, body: Partial<CreateGameInput>) => api.patch<Game>(`/games/${id}`, body),
+  archive: (id: string, reason: string) => api.post<Game>(`/games/${id}/archive`, { reason }, { headers: { 'Idempotency-Key': `control-game-archive-${id}-${crypto.randomUUID()}` } }),
 };

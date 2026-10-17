@@ -4,7 +4,7 @@ import { contentApi } from '@/lib/content-api';
 import { scenarioApi } from '@/lib/scenario-api';
 import type { QrTrigger } from '@/types/resources';
 import { managementApi } from '@/lib/management-api';
-import type { ControlRoom, Device, Game, GameSession, Health, Organization, Team, TimelineEvent, User } from '@/types/api';
+import type { ControlRoom, Device, Game, GameSession, Health, Organization, Room, Team, TimelineEvent, User } from '@/types/api';
 
 export const queries = {
   me: () => ({ ...queryPolicy.identity, queryKey: ['me'], queryFn: () => api.get<User>('/me') }),
@@ -16,6 +16,8 @@ export const queries = {
   session: (id: string) => ({ queryKey: ['sessions', id], queryFn: () => api.get<GameSession>(`/game-sessions/${id}`) }),
   teams: () => ({ queryKey: ['teams'], queryFn: () => api.get<Team[]>('/teams') }),
   team: (id: string) => ({ queryKey: ['teams', id], queryFn: () => api.get<Team>(`/teams/${id}`) }),
+  rooms: (gameId: string) => ({ queryKey: ['games', gameId, 'rooms'], queryFn: () => import('@/lib/room-api').then(({ roomApi }) => roomApi.list(gameId)) }),
+  room: (id: string) => ({ queryKey: ['rooms', id], queryFn: () => import('@/lib/room-api').then(({ roomApi }) => roomApi.get(id)) as Promise<Room> }),
   devices: () => ({ queryKey: ['devices'], queryFn: () => api.get<Device[]>('/devices') }),
   controlRoom: (id: string) => ({ queryKey: ['control-room', id], queryFn: () => api.get<ControlRoom>(`/game-sessions/${id}/control-room`) }),
   timeline: (id: string) => ({ queryKey: ['sessions', id, 'timeline'], queryFn: () => api.get<TimelineEvent[]>(`/game-sessions/${id}/timeline`) }),
