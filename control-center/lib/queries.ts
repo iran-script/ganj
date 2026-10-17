@@ -4,7 +4,7 @@ import { contentApi } from '@/lib/content-api';
 import { scenarioApi } from '@/lib/scenario-api';
 import type { QrTrigger } from '@/types/resources';
 import { managementApi } from '@/lib/management-api';
-import type { ControlRoom, Device, Game, GameSession, Health, Organization, Room, Team, TimelineEvent, User } from '@/types/api';
+import type { ControlRoom, Device, Game, GameSession, Health, Leaderboard, Organization, Room, Team, TimelineEvent, User } from '@/types/api';
 
 export const queries = {
   me: () => ({ ...queryPolicy.identity, queryKey: ['me'], queryFn: () => api.get<User>('/me') }),
@@ -20,6 +20,7 @@ export const queries = {
   room: (id: string) => ({ queryKey: ['rooms', id], queryFn: () => import('@/lib/room-api').then(({ roomApi }) => roomApi.get(id)) as Promise<Room> }),
   devices: () => ({ queryKey: ['devices'], queryFn: () => api.get<Device[]>('/devices') }),
   controlRoom: (id: string) => ({ queryKey: ['control-room', id], queryFn: () => api.get<ControlRoom>(`/game-sessions/${id}/control-room`) }),
+  leaderboard: (id: string) => ({ queryKey: ['sessions', id, 'leaderboard'], queryFn: () => api.get<Leaderboard>(`/game-sessions/${id}/leaderboard`) }),
   timeline: (id: string) => ({ queryKey: ['sessions', id, 'timeline'], queryFn: () => api.get<TimelineEvent[]>(`/game-sessions/${id}/timeline`) }),
   organizations: () => ({ queryKey: ['organizations'], queryFn: () => api.get<Organization[]>('/organizations') }),
   scenarios: () => ({ queryKey: ['scenarios'], queryFn: () => import('@/lib/scenario-api').then(({ scenarioApi }) => scenarioApi.list()) }),

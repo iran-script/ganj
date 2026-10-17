@@ -13,7 +13,8 @@ vi.mock('@/lib/content-api', () => ({ contentApi: { media: async () => [{ id: 'a
 afterEach(cleanup);
 it('authors existing hint and scoring policies without empty hints', async () => {
   const changed = vi.fn();
-  render(<NodePolicies node={{ node_key: 'puzzle', node_type: 'Puzzle', config: { prompt: 'Solve', expected_answer: 'secret', case_sensitive: false, trim_whitespace: true } }} readOnly={false} onChange={changed} />);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><NodePolicies node={{ node_key: 'puzzle', node_type: 'Puzzle', config: { prompt: 'Solve', expected_answer: 'secret', case_sensitive: false, trim_whitespace: true } }} readOnly={false} onChange={changed} /></QueryClientProvider>);
   await userEvent.click(screen.getByText('زمان، پیام و امتیاز مرحله'));
   fireEvent.change(screen.getByLabelText('راهنمایی 1'), { target: { value: 'First clue' } });
   fireEvent.change(screen.getByLabelText('پاداش تلاش اول'), { target: { value: '30' } });

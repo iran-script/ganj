@@ -86,6 +86,8 @@ export type ControlRoom = {
   live_challenges?: LiveChallenge[];
   timeline?: TimelineEvent[];
 };
+export type LeaderboardRow = { rank: number; team_id?: string | null; score?: number | null; effective_elapsed_seconds?: number; hints_used?: number; finished_at?: string | null; own_team?: boolean };
+export type Leaderboard = { visibility?: string; rankings?: LeaderboardRow[] };
 
 export type TimelineEvent = { event_id?: string; event_type?: string; reason?: string | null; occurred_at?: string; request_id?: string | null };
 export type LiveChallenge = { id: string; type: string; status: string; priority?: number; starts_at?: string | null; expires_at?: string | null; interrupt_policy?: string; fairness_class?: string; config?: { message?: string; objective?: string }; targets?: Array<{ type: string; id?: string | null; status?: string }> };
