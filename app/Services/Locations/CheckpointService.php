@@ -50,6 +50,14 @@ class CheckpointService
             }
             if ($id) {
                 $checkpoint = Checkpoint::whereKey($checkpoint->id)->lockForUpdate()->sole();
+                if (($input['status'] ?? null) === 'ARCHIVED' && $checkpoint->status !== 'ARCHIVED'
+                    && DB::table('scenario_nodes')
+                        ->join('scenario_versions', 'scenario_versions.id', '=', 'scenario_nodes.scenario_version_id')
+                        ->where('scenario_nodes.config->checkpoint_id', $checkpoint->public_id)
+                        ->where('scenario_versions.status', 'PUBLISHED')
+                        ->exists()) {
+                    throw new ApiException('DEPENDENCY_ACTIVE', 'این موقعیت در نسخه منتشرشده سناریو استفاده می‌شود و قابل حذف یا بایگانی نیست.', [], 409);
+                }
                 if (DB::table('scenario_nodes')->join('scenario_versions', 'scenario_versions.id', '=', 'scenario_nodes.scenario_version_id')
                     ->where('scenario_nodes.config->checkpoint_id', $checkpoint->public_id)->where('scenario_versions.status', '<>', 'DRAFT')->exists()
                     && array_intersect(array_keys($input), ['type', 'geom', 'radius_meters', 'config'])) {

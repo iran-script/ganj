@@ -27,6 +27,7 @@ export type MediaItem = { id: string; organization_id: string; name: string; kin
 export type SubmissionItem = { id: string; session_id: string; team_id: string; player_id: string; node_id: string; node_title: string; type: string; status: string; asset: MediaItem; submitted_at: string; location_verified: boolean; review_message?: string };
 export const contentApi = {
   locations: () => loadBank('/content/locations', locationSchema),
+  archiveLocation: (id: string, reason: string) => api.patch<LocationItem>(`/content/locations/${id}`, { status: 'ARCHIVED', reason }),
   qr: () => loadBank('/content/qr-bank', qrSchema),
   media: () => api.get<MediaItem[]>('/content/media'),
   submissions: (sessionId: string) => api.get<SubmissionItem[]>(`/submissions?session_id=${encodeURIComponent(sessionId)}`),

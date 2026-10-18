@@ -1,18 +1,21 @@
 'use client';
 import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
-import { useQuery } from '@tanstack/react-query';
 import { contentApi } from '@/lib/content-api';
 import { filterLocations, mapLocations } from '@/lib/gis/domain';
-import { Button, ErrorState, LoadingState, PageHeader, StatusBadge } from '@/components/ui';
+import { Button, ConfirmDialog, ErrorState, LoadingState, PageHeader, StatusBadge } from '@/components/ui';
 import { LazyMap } from './lazy-map';
 
 export function LocationBank() {
   const query = useQuery({ queryKey: ['content-bank', 'locations'], queryFn: () => contentApi.locations() });
+  const client = useQueryClient();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('ALL');
   const [category, setCategory] = useState('');
   const [selectedId, setSelectedId] = useState<string>();
+  const [archiveTarget, setArchiveTarget] = useState<{ id: string; name: string } | null>(null);
+  const archive = useMutation({ mutationFn: (item: { id: string; name: string }) => contentApi.archiveLocation(item.id, `بایگانی موقعیت «${item.name}» از مرکز کنترل`), onSuccess: async () => { setArchiveTarget(null); await client.invalidateQueries({ queryKey: ['content-bank', 'locations'] }); } });
   if (query.isPending) return <LoadingState />;
   if (query.isError) return <ErrorState message="بارگذاری بانک انجام نشد." onRetry={() => void query.refetch()} />;
   const items = filterLocations(query.data, search, status, category);
@@ -35,7 +38,7 @@ export function LocationBank() {
               <bdi className="mt-2 block text-xs">{item.latitude}, {item.longitude} • {item.default_radius_m} m</bdi>
               {!markers.some(marker => marker.id === item.id) && <span className="block text-xs text-[var(--nexo-warning)]">مختصات نامعتبر یا خارج از پوشش نقشه</span>}
             </button>
-            <Link className="mt-2 inline-block p-2 text-sm text-[var(--nexo-amber)]" href={`/control/content/locations/${item.id}`}>ویرایش موقعیت</Link>
+            <div className="mt-2 flex gap-2"><Link className="inline-block p-2 text-sm text-[var(--nexo-amber)]" href={`/control/content/locations/${item.id}`}>ویرایش موقعیت</Link>{item.status !== 'ARCHIVED' && <Button variant="danger" onClick={() => setArchiveTarget({ id: item.id, name: item.name })}>حذف / بایگانی</Button>}</div>
           </article>)}
           {!items.length && <p role="status">{query.data.length ? 'موردی با این فیلتر پیدا نشد.' : 'هنوز موقعیتی ثبت نشده است.'}</p>}
         </div>
@@ -46,5 +49,5 @@ export function LocationBank() {
         <p className="text-xs leading-6 text-[var(--nexo-muted)]">لایه فعال: موقعیت‌های ذخیره‌شده • سبز: فعال • خاکستری: غیرفعال • طلایی: انتخاب‌شده</p>
       </div>
     </div>
-  </>;
+  {archiveTarget && <ConfirmDialog title="بایگانی موقعیت" description={`موقعیت «${archiveTarget.name}» بایگانی می‌شود و سوابق و ارجاع‌های آن حفظ خواهد شد. اگر در نسخه منتشرشده استفاده شده باشد، عملیات رد می‌شود.`} confirmLabel={archive.isPending ? 'در حال بایگانی...' : 'تأیید بایگانی'} onClose={() => { if (!archive.isPending) setArchiveTarget(null); }} onConfirm={() => archive.mutate(archiveTarget)} />} </>;
 }

@@ -225,6 +225,15 @@ class ScenarioService
 
     private function archive(User $actor, Scenario $scenario, array $input): array
     {
+        $hasActiveExecution = DB::table('game_sessions')
+            ->join('games', 'games.id', '=', 'game_sessions.game_id')
+            ->join('scenario_versions', 'scenario_versions.id', '=', 'games.scenario_version_id')
+            ->where('scenario_versions.scenario_id', $scenario->id)
+            ->whereIn('game_sessions.status', ['REGISTRATION', 'READY', 'RUNNING', 'PAUSED'])
+            ->exists();
+        if ($hasActiveExecution) {
+            throw new ApiException('DEPENDENCY_ACTIVE', 'این سناریو به اجرای فعال وابسته است و فعلاً قابل بایگانی نیست.', [], 409);
+        }
         if ($scenario->status !== 'ARCHIVED') {
             $scenario->forceFill(['status' => 'ARCHIVED', 'archived_at' => now()])->save();
             $this->events->record('scenario.archived.v1', $actor, $scenario, reason: $input['reason'] ?? null);

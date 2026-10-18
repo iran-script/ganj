@@ -14,14 +14,15 @@ async function allPages<T>(path: string): Promise<T[]> {
 }
 export const scenarioApi = {
   list: () => allPages<Scenario>('/scenarios'),
-  ensureDraft: (id: string) => api.post<ScenarioVersion>(`/scenarios/${id}/draft`, {}),
+  ensureDraft: (id: string, body: { reason?: string } = {}, idempotencyKey = key()) => api.post<ScenarioVersion>(`/scenarios/${id}/draft`, body, { headers: { 'Idempotency-Key': idempotencyKey } }),
   update: (id: string, body: { title: string; description: string; theme: string }) => api.patch<Scenario>(`/scenarios/${id}`, body),
+  archive: (id: string, reason: string, idempotencyKey = key()) => api.post<Scenario>(`/scenarios/${id}/archive`, { reason }, { headers: { 'Idempotency-Key': idempotencyKey } }),
   get: (id: string) => api.get<Scenario>(`/scenarios/${id}`),
-  create: (body: { organization_id: string; title: string; description?: string; theme?: string }) => api.post<Scenario>('/scenarios', body, { headers: { 'Idempotency-Key': key() } }),
+  create: (body: { organization_id: string; title: string; description?: string; theme?: string; reason?: string }, idempotencyKey = key()) => api.post<Scenario>('/scenarios', body, { headers: { 'Idempotency-Key': idempotencyKey } }),
   versions: (id: string) => allPages<ScenarioVersion>(`/scenarios/${id}/versions`),
   version: (id: string) => api.get<ScenarioVersion>(`/scenario-versions/${id}`),
   graph: (id: string) => api.get<ScenarioGraphResponse>(`/scenario-versions/${id}/graph`),
-  createVersion: (id: string) => api.post<ScenarioVersion>(`/scenarios/${id}/versions`, {}, { headers: { 'Idempotency-Key': key() } }),
+  createVersion: (id: string, body: { reason?: string } = {}, idempotencyKey = key()) => api.post<ScenarioVersion>(`/scenarios/${id}/versions`, body, { headers: { 'Idempotency-Key': idempotencyKey } }),
   saveGraph: (id: string, body: { revision_token: string; nodes: unknown[]; edges: unknown[]; variables: unknown[]; conditions: unknown[]; subflows: unknown[] }) => api.put<ScenarioGraphResponse>(`/scenario-versions/${id}/graph`, body),
   validate: (id: string, revision_token: string) => api.post<ScenarioValidation>(`/scenario-versions/${id}/validate`, { revision_token }),
   publish: (id: string, revision_token: string) => api.post<ScenarioVersion>(`/scenario-versions/${id}/publish`, { revision_token }),

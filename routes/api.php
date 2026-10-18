@@ -96,6 +96,7 @@ Route::prefix('v1')->group(function (): void {
         Route::post('/scenarios', [ScenarioController::class, 'mutate'])->name('scenarios.create');
         Route::get('/scenarios/{scenario_id}', [ScenarioController::class, 'show'])->name('scenarios.show');
         Route::patch('/scenarios/{scenario_id}', [ScenarioController::class, 'mutate'])->name('scenarios.update');
+        Route::post('/scenarios/{scenario_id}/archive', [ScenarioController::class, 'mutate'])->name('scenarios.archive');
         Route::get('/scenarios/{scenario_id}/versions', [ScenarioController::class, 'index'])->name('scenarios.versions');
         Route::post('/scenarios/{scenario_id}/versions', [ScenarioController::class, 'mutate'])->name('scenarios.createVersion');
         Route::post('/scenarios/{scenario_id}/draft', [ScenarioController::class, 'mutate'])->name('scenarios.ensureDraft');

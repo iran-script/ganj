@@ -60,6 +60,9 @@ class GameService
             }
             $oldStatus = $game->status;
             if ($action === 'archive') {
+                if (DB::table('game_sessions')->where('game_id', $game->id)->whereIn('status', ['REGISTRATION', 'READY', 'RUNNING', 'PAUSED'])->exists()) {
+                    throw new ApiException('DEPENDENCY_ACTIVE', 'این بازی اجرای فعال دارد و فعلاً قابل بایگانی نیست.', [], 409);
+                }
                 if ($game->status !== 'ARCHIVED') {
                     $game->forceFill(['status' => 'ARCHIVED', 'archived_at' => now()])->save();
                     $this->events->record('game.archived.v1', $actor, $game, reason: $input['reason'] ?? null);

@@ -46,7 +46,7 @@ class ContentBankController extends Controller
             'latitude' => 'required|numeric|between:-90,90', 'longitude' => 'required|numeric|between:-180,180',
             'default_radius_m' => 'required|numeric|min:0.01|max:100000', 'accuracy_m' => 'sometimes|nullable|numeric|min:1|max:1000',
             'dwell_seconds' => 'sometimes|nullable|integer|min:0|max:86400', 'category' => 'sometimes|string|max:100',
-            'description' => 'sometimes|string|max:2000', 'status' => 'required|in:ACTIVE,INACTIVE'];
+            'description' => 'sometimes|string|max:2000', 'status' => 'required|in:ACTIVE,INACTIVE,ARCHIVED'];
         $this->input->validate($request->all(), $rules);
         $input = $request->all();
         $payload = ['name' => $input['name'], 'type' => 'POINT', 'geom' => ['type' => 'Point', 'coordinates' => [(float) $input['longitude'], (float) $input['latitude']]],
