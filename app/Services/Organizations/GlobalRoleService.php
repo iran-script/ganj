@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\Audit\AuditService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
 class GlobalRoleService
@@ -30,6 +31,40 @@ class GlobalRoleService
             $target->ensureActive();
 
             return $this->recordGrant(null, $target, $reason);
+        }, 3);
+    }
+
+    public function createLocalSuperAdmin(string $name, ?string $email, ?string $mobile, string $password, string $reason): User
+    {
+        if (! app()->runningInConsole()) {
+            throw new ApiException('AUTHORIZATION_DENIED', 'This operation is available only to the local operator.', [], 403);
+        }
+
+        OrganizationInput::validate(['reason' => $reason], 'archive');
+        if ($email === null && $mobile === null) {
+            throw new ApiException('VALIDATION_FAILED', 'An email or mobile identifier is required.', [], 422);
+        }
+
+        return DB::transaction(function () use ($name, $email, $mobile, $password, $reason): User {
+            DB::statement('LOCK TABLE users IN SHARE ROW EXCLUSIVE MODE');
+            DB::statement('LOCK TABLE role_assignments IN SHARE ROW EXCLUSIVE MODE');
+
+            $existing = User::query()
+                ->when($email !== null, fn ($query) => $query->whereRaw('lower(email) = ?', [mb_strtolower($email)]))
+                ->when($mobile !== null, fn ($query) => $query->orWhere('mobile', $mobile))
+                ->first();
+            if ($existing) {
+                if ($this->activeAssignment($existing) !== null) {
+                    return $existing;
+                }
+
+                throw new ApiException('CONFLICT', 'An account with this identifier already exists and was not changed.', [], 409);
+            }
+
+            $user = User::create(['name' => $name, 'email' => $email, 'mobile' => $mobile, 'password_hash' => Hash::make($password)]);
+            $this->recordGrant(null, $user, $reason);
+
+            return $user;
         }, 3);
     }
 

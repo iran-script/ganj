@@ -16,7 +16,13 @@ export function clearStoredToken(): void {
   window.localStorage.removeItem(TOKEN_KEY);
 }
 
-const baseUrl = () => (process.env.NEXT_PUBLIC_API_BASE_URL ?? '').replace(/\/$/, '');
+export function getApiBaseUrl(): string {
+  if (process.env.NODE_ENV === 'production') {
+    return '/api/v1';
+  }
+
+  return (process.env.NEXT_PUBLIC_API_BASE_URL || '/api/v1').replace(/\/$/, '');
+}
 
 async function request<T>(path: string, init: RequestInit = {}, unwrap = true): Promise<T> {
   const controller = new AbortController();
@@ -28,7 +34,7 @@ async function request<T>(path: string, init: RequestInit = {}, unwrap = true): 
   if (token) headers.set('Authorization', `Bearer ${token}`);
 
   try {
-    const response = await fetch(`${baseUrl()}${path}`, { ...init, headers, signal: controller.signal });
+    const response = await fetch(`${getApiBaseUrl()}${path}`, { ...init, headers, signal: controller.signal });
     const payload = (response.status === 204 ? null : await response.json().catch(() => null)) as ApiEnvelope<T> | { message?: string; code?: string; details?: Record<string, unknown> } | null;
     if (!response.ok) {
       const body = payload as { error?: { message?: string; code?: string; details?: Record<string, unknown> }; message?: string; code?: string; details?: Record<string, unknown> } | null;

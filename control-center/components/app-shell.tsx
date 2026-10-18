@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Activity, BarChart3, Boxes, FileText, Gamepad2, KeyRound, LayoutDashboard, LogOut, PanelRightClose, PanelRightOpen, Settings2, ShieldCheck, Sparkles, Users, type LucideIcon } from 'lucide-react';
 import { ContentNavigation } from '@/components/content-navigation';
-import { clearStoredToken } from '@/lib/api-client';
+import { api, clearStoredToken } from '@/lib/api-client';
 import { queries } from '@/lib/queries';
 import { Button, ErrorState, LoadingState, SidebarLink } from '@/components/ui';
 
@@ -37,7 +37,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return true;
   });
   const current = pathname.replace('/control', '') || '/';
-  const logout = async () => { try { await fetch(`${(process.env.NEXT_PUBLIC_API_BASE_URL ?? '').replace(/\/$/, '')}/auth/logout`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('nexo.control.token') ?? ''}` } }); } finally { clearStoredToken(); cache.clear(); router.replace('/login'); } };
+  const logout = async () => { try { await api.post('/auth/logout'); } finally { clearStoredToken(); cache.clear(); router.replace('/login'); } };
   return <div className="min-h-screen bg-[var(--nexo-bg)]">
     <aside className={`fixed inset-y-0 right-0 z-20 hidden border-l border-[var(--nexo-border)] bg-[#0e141b] overflow-y-auto px-3 py-5 transition-[width] duration-200 lg:block ${collapsed ? 'w-20' : 'w-64'}`}>
       <div className={`mb-9 flex items-center gap-3 px-2 ${collapsed ? 'justify-center' : ''}`}><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--nexo-amber)] font-black text-[#17120b]">N</div>{!collapsed && <div><div className="font-black tracking-[0.2em] text-white">NEXO</div><div className="text-[10px] text-[var(--nexo-muted)]">GAME MASTER</div></div>}</div>
