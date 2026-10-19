@@ -6,43 +6,72 @@ import 'package:nexo_player/core/api/api_client.dart';
 import 'package:nexo_player/core/config/app_config.dart';
 
 void main() {
-  test('default URL is emulator-only and diagnostics expose no credentials',
-      () {
-    expect(AppConfig.apiBaseUrl, 'http://10.0.2.2:8000/api/v1');
-    expect(AppConfig.diagnosticApiBaseUrl, 'http://10.0.2.2:8000/api/v1');
-    final safeUrl = AppConfig.sanitizedApiBaseUrl(
-        'https://user:password@example.test/api/v1?token=secret');
-    expect(safeUrl, 'https://example.test/api/v1');
-    expect(safeUrl, isNot(contains('password')));
-    expect(safeUrl, isNot(contains('secret')));
-    expect(
+  test(
+    'default URL is emulator-only and diagnostics expose no credentials',
+    () {
+      expect(AppConfig.apiBaseUrl, 'http://10.0.2.2:8000/api/v1');
+      expect(AppConfig.diagnosticApiBaseUrl, 'http://10.0.2.2:8000/api/v1');
+      final safeUrl = AppConfig.sanitizedApiBaseUrl(
+        'https://user:password@example.test/api/v1?token=secret',
+      );
+      expect(safeUrl, 'https://example.test/api/v1');
+      expect(safeUrl, isNot(contains('password')));
+      expect(safeUrl, isNot(contains('secret')));
+      expect(
         AppConfig.isAllowedApiBaseUrl(
-            'https://user:password@example.test/api/v1?token=secret'),
-        isFalse);
-  });
+          'https://user:password@example.test/api/v1?token=secret',
+        ),
+        isFalse,
+      );
+    },
+  );
 
   test('only HTTPS and local debug endpoints are allowed', () {
-    expect(AppConfig.isAllowedApiBaseUrl('https://api.example.test/api/v1'),
-        isTrue);
     expect(
-        AppConfig.isAllowedApiBaseUrl('http://10.0.2.2:8000/api/v1'), isTrue);
-    expect(AppConfig.isAllowedApiBaseUrl('http://api.example.test/api/v1'),
-        isFalse);
+      AppConfig.isAllowedApiBaseUrl('https://api.example.test/api/v1'),
+      isTrue,
+    );
+    expect(
+      AppConfig.isAllowedApiBaseUrl('http://10.0.2.2:8000/api/v1'),
+      isTrue,
+    );
+    expect(
+      AppConfig.isAllowedApiBaseUrl('http://api.example.test/api/v1'),
+      isFalse,
+    );
+    expect(
+      AppConfig.isAllowedApiBaseUrl('http://2.188.205.35:18100/api/v1'),
+      isTrue,
+    );
+    expect(
+      AppConfig.isAllowedApiBaseUrl('http://2.188.205.35:18099/api/v1'),
+      isFalse,
+    );
   });
 
-  test('diagnostic failure categories distinguish socket TLS timeout and JSON',
-      () {
-    expect(ApiClient.diagnosticFailureKind(TimeoutException('timed out')),
-        'timeout');
-    expect(
+  test(
+    'diagnostic failure categories distinguish socket TLS timeout and JSON',
+    () {
+      expect(
+        ApiClient.diagnosticFailureKind(TimeoutException('timed out')),
+        'timeout',
+      );
+      expect(
         ApiClient.diagnosticFailureKind(
-            const HandshakeException('certificate rejected')),
-        'tls');
-    expect(
+          const HandshakeException('certificate rejected'),
+        ),
+        'tls',
+      );
+      expect(
         ApiClient.diagnosticFailureKind(
-            const SocketException('connection refused')),
-        'socket');
-    expect(ApiClient.diagnosticFailureKind(const FormatException()),
-        'invalid_json');
-  });
+          const SocketException('connection refused'),
+        ),
+        'socket',
+      );
+      expect(
+        ApiClient.diagnosticFailureKind(const FormatException()),
+        'invalid_json',
+      );
+    },
+  );
 }

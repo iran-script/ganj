@@ -71,9 +71,8 @@ class ApiClient {
     final diagnosticEndpoint = _safeDiagnosticEndpoint(path);
     final authDiagnostic =
         path == '/auth/login' || path == '/auth/register' || path == '/me';
-    final baseUri = Uri.tryParse(AppConfig.apiBaseUrl);
-    if (baseUri == null ||
-        !AppConfig.isAllowedApiBaseUrl(AppConfig.apiBaseUrl)) {
+    final baseUri = _validatedBaseUri();
+    if (baseUri == null) {
       if (kDebugMode && diagnosticRequest) {
         debugPrint(
             'NEXO $method request failed kind=insecure_or_invalid_endpoint endpoint=$diagnosticEndpoint');
@@ -210,8 +209,12 @@ class ApiClient {
     }
     final client = _client ?? http.Client();
     try {
+      final baseUri = _validatedBaseUri();
+      if (baseUri == null) {
+        throw const ApiError(code: 'INSECURE_ENDPOINT', message: '');
+      }
       final request =
-          http.Request('GET', Uri.parse('${AppConfig.apiBaseUrl}$path'))
+          http.Request('GET', baseUri.replace(path: '${baseUri.path}$path'))
             ..headers.addAll(headers);
       final response =
           await client.send(request).timeout(const Duration(seconds: 60));
@@ -254,9 +257,13 @@ class ApiClient {
       throw const ApiError(
           code: 'VALIDATION_FAILED', message: 'Invalid evidence size.');
     }
+    final baseUri = _validatedBaseUri();
+    if (baseUri == null) {
+      throw const ApiError(code: 'INSECURE_ENDPOINT', message: '');
+    }
     final generation = OfflineIdentity.instance.generation;
     final request = http.MultipartRequest('POST',
-        Uri.parse('${AppConfig.apiBaseUrl}/runtime/nodes/$nodeId/evidence'))
+        baseUri.replace(path: '${baseUri.path}/runtime/nodes/$nodeId/evidence'))
       ..headers.addAll({
         'Accept': 'application/json',
         'Authorization': 'Bearer ${await token() ?? ''}',
@@ -298,6 +305,14 @@ class ApiClient {
   Future<String?> token() => _store.read(_tokenKey);
 
   Future<String> deviceId() => _device.getOrCreate();
+
+  static Uri? _validatedBaseUri() {
+    final uri = Uri.tryParse(AppConfig.apiBaseUrl);
+    if (uri == null || !AppConfig.isAllowedApiBaseUrl(AppConfig.apiBaseUrl)) {
+      return null;
+    }
+    return uri;
+  }
 
   static bool isNetworkFailure(Object error) =>
       (error is ApiError &&
