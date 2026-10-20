@@ -8,7 +8,7 @@ use Tests\TestCase;
 
 class GameSessionContractTest extends TestCase
 {
-    public function test_game_and_session_routes_match_the_canonical_contract_without_later_domain_routes(): void
+    public function test_game_and_session_routes_match_the_canonical_contract_without_cross_domain_routes(): void
     {
         $spec = Yaml::parseFile(base_path('docs/specs/03_openapi.yaml'));
         $expected = [];
@@ -30,7 +30,7 @@ class GameSessionContractTest extends TestCase
         }
         $this->assertCount(27, $expected);
         foreach (['/billing', '/payments', '/store', '/gps', '/ar'] as $later) {
-            $this->assertFalse($routes->contains(fn ($r): bool => in_array(ltrim($later, '/'), explode('/', $r->uri()), true)));
+            $this->assertFalse($actual->contains(fn ($r): bool => in_array(ltrim($later, '/'), explode('/', $r->uri()), true)));
         }
         foreach (['GameCreate', 'GameUpdate', 'SessionCreate', 'SessionUpdate', 'SessionReady', 'SessionDevice'] as $schema) {
             $this->assertFalse($spec['components']['schemas'][$schema]['additionalProperties']);

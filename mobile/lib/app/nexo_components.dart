@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'nexo_theme.dart';
 import 'nexo_routes.dart';
@@ -27,6 +28,65 @@ class NexoLoading extends StatelessWidget {
           const SizedBox(height: NexoSpace.x4),
           Text(message, textAlign: TextAlign.center),
         ]),
+      );
+}
+
+class NexoSkeleton extends StatefulWidget {
+  const NexoSkeleton({
+    this.width,
+    this.height = 16,
+    this.radius = NexoTheme.radiusSmall,
+    super.key,
+  });
+
+  final double? width;
+  final double height;
+  final double radius;
+
+  @override
+  State<NexoSkeleton> createState() => _NexoSkeletonState();
+}
+
+class _NexoSkeletonState extends State<NexoSkeleton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController animation = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      animation.stop();
+    } else if (!animation.isAnimating) {
+      animation.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    animation.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: animation,
+        builder: (context, _) => Container(
+          width: widget.width,
+          height: widget.height,
+          decoration: BoxDecoration(
+            color: Color.lerp(
+              NexoTheme.surfaceRaised,
+              NexoTheme.border,
+              MediaQuery.disableAnimationsOf(context)
+                  ? .35
+                  : .2 + animation.value * .3,
+            ),
+            borderRadius: BorderRadius.circular(widget.radius),
+          ),
+        ),
       );
 }
 
@@ -155,7 +215,8 @@ class NexoBottomNavigation extends StatelessWidget {
   static const _destinations = <(String, IconData, String)>[
     ('خانه', Icons.home_outlined, NexoRoutes.home),
     ('بازی‌ها', Icons.explore_outlined, NexoRoutes.games),
-    ('تیم من', Icons.groups_outlined, NexoRoutes.teams),
+    ('مدیریت تیم', Icons.groups_2_outlined, NexoRoutes.teams),
+    ('مأموریت', Icons.flag_outlined, NexoRoutes.missions),
     ('پروفایل', Icons.person_outline, NexoRoutes.profile),
   ];
 
@@ -164,11 +225,12 @@ class NexoBottomNavigation extends StatelessWidget {
         top: false,
         child: NavigationBar(
           selectedIndex: selectedIndex,
-          height: 68,
+          height: 76,
           labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
           onDestinationSelected: (index) {
             final route = _destinations[index].$3;
             if (index != selectedIndex) {
+              HapticFeedback.selectionClick();
               Navigator.of(context)
                   .pushNamedAndRemoveUntil(route, (_) => false);
             }
@@ -200,7 +262,7 @@ class NexoCityHeader extends StatelessWidget {
           gradient: const LinearGradient(
             begin: AlignmentDirectional.topStart,
             end: AlignmentDirectional.bottomEnd,
-            colors: [Color(0xff182f3c), Color(0xff0b1a22)],
+            colors: [Color(0xff30205E), Color(0xff100D28)],
           ),
           borderRadius: BorderRadius.circular(NexoTheme.radiusLarge),
           border: Border.all(color: NexoTheme.border),
@@ -247,7 +309,7 @@ class NexoCityArtwork extends StatelessWidget {
           gradient: LinearGradient(
             begin: AlignmentDirectional.topStart,
             end: AlignmentDirectional.bottomEnd,
-            colors: [Color(0xff1d3d4f), Color(0xff0b1a25)],
+            colors: [Color(0xff30205E), Color(0xff100D28)],
           ),
         ),
         child: const Stack(children: [

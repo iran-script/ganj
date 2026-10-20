@@ -9,7 +9,7 @@ use Tests\TestCase;
 
 class ScenarioContractTest extends TestCase
 {
-    public function test_scenario_routes_are_canonical_authenticated_and_do_not_add_later_domains(): void
+    public function test_scenario_routes_are_canonical_authenticated_and_scoped_to_their_domain(): void
     {
         $spec = Yaml::parseFile(base_path('docs/specs/03_openapi.yaml'));
         $all = collect(Route::getRoutes()->getRoutes());
@@ -29,8 +29,9 @@ class ScenarioContractTest extends TestCase
                 }
             }
         }
-        foreach (['scenario-assignments', 'billing', 'payments', 'store', 'gps', 'ar'] as $later) {
-            $this->assertFalse($all->contains(fn ($route): bool => in_array($later, explode('/', $route->uri()), true)));
+        $this->assertFalse($all->contains(fn ($route): bool => in_array('scenario-assignments', explode('/', $route->uri()), true)));
+        foreach (['billing', 'payments', 'store', 'gps', 'ar'] as $later) {
+            $this->assertFalse($routes->contains(fn ($route): bool => in_array($later, explode('/', $route->uri()), true)));
         }
         foreach (['ScenarioCreate', 'ScenarioUpdate', 'ScenarioVersionUpdate', 'ScenarioGraphSave', 'ScenarioPublish'] as $name) {
             $this->assertFalse($spec['components']['schemas'][$name]['additionalProperties']);

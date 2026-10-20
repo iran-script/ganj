@@ -13,7 +13,7 @@ class GameInput
     {
         $reason = ['sometimes', 'nullable', 'string', 'max:1000'];
         $game = ['name' => ['required', 'string', 'max:255'], 'slug' => ['required', 'string', 'max:100', 'regex:/^[a-z0-9]+(?:-[a-z0-9]+)*$/'], 'description' => ['sometimes', 'nullable', 'string', 'max:10000'], 'city' => ['sometimes', 'nullable', 'string', 'max:120'], 'default_timezone' => ['required', 'timezone'], 'status' => ['sometimes', 'in:DRAFT,ACTIVE']];
-        $game += ['pricing' => ['sometimes', 'array:mode,amount,currency'], 'scenario_version_id' => ['sometimes', 'uuid']];
+        $game += ['pricing' => ['sometimes', 'array:mode,amount,currency,booking_available,payment_deadline_minutes,refund_policy,cancellation_policy,max_active_reservations,effective_at'], 'scenario_version_id' => ['sometimes', 'uuid']];
         $session = ['timezone' => ['sometimes', 'timezone'], 'registration_opens_at' => ['sometimes', 'nullable', 'date'], 'registration_closes_at' => ['sometimes', 'nullable', 'date'], 'scheduled_start_at' => ['sometimes', 'nullable', 'date']];
         if ($action === 'index') {
             return TeamInput::validate($input, 'index');

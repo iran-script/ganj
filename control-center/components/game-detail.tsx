@@ -18,7 +18,7 @@ const gameFormSchema = z.object({
   city: z.string().max(120, 'نام شهر بیش از حد طولانی است.'),
   default_timezone: z.string().min(1, 'منطقه زمانی الزامی است.'),
   status: z.enum(['DRAFT', 'ACTIVE']),
-  pricing_mode: z.enum(['FREE', 'PAID']),
+  pricing_mode: z.enum(['FREE', 'PER_ROOM', 'PER_PLAYER']),
   amount: z.string(),
   currency: z.string().regex(/^[A-Z]{3}$/, 'واحد پول باید سه حرف بزرگ باشد.'),
 });
@@ -26,7 +26,8 @@ const gameFormSchema = z.object({
 type GameForm = z.infer<typeof gameFormSchema>;
 
 function initialForm(game: Game): GameForm {
-  return { name: game.name ?? game.title ?? '', slug: game.slug ?? '', description: game.description ?? '', city: game.city ?? '', default_timezone: game.default_timezone ?? 'UTC', status: game.status === 'ACTIVE' ? 'ACTIVE' : 'DRAFT', pricing_mode: game.pricing?.mode === 'PAID' ? 'PAID' : 'FREE', amount: String(game.pricing?.amount ?? 0), currency: game.pricing?.currency ?? 'IRR' };
+  const mode = game.pricing?.mode;
+  return { name: game.name ?? game.title ?? '', slug: game.slug ?? '', description: game.description ?? '', city: game.city ?? '', default_timezone: game.default_timezone ?? 'UTC', status: game.status === 'ACTIVE' ? 'ACTIVE' : 'DRAFT', pricing_mode: mode === 'FREE' ? 'FREE' : mode === 'PER_PLAYER' ? 'PER_PLAYER' : 'PER_ROOM', amount: String(game.pricing?.amount ?? 0), currency: game.pricing?.currency ?? 'IRR' };
 }
 
 function canManageGame(game: Game, capabilities?: { global_roles?: string[]; organizations?: Array<{ id: string; role: string }> }): boolean {
@@ -41,7 +42,7 @@ function formatDate(value?: string | null): string {
 function EditGameForm({ game, onSaved, onCancel }: { game: Game; onSaved: (game: Game) => void; onCancel: () => void }) {
   const [values, setValues] = useState<GameForm>(() => initialForm(game));
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const mutation = useMutation({ mutationFn: (input: GameForm) => gameApi.update(game.id, { name: input.name, slug: input.slug, description: input.description || undefined, city: input.city || undefined, default_timezone: input.default_timezone, status: input.status, pricing: { mode: input.pricing_mode, amount: input.pricing_mode === 'FREE' ? 0 : Number(input.amount), currency: input.currency }, reason: 'ویرایش بازی در مرکز کنترل' }), onSuccess: onSaved });
+  const mutation = useMutation({ mutationFn: (input: GameForm) => gameApi.update(game.id, { name: input.name, slug: input.slug, description: input.description || undefined, city: input.city || undefined, default_timezone: input.default_timezone, status: input.status, pricing: { mode: input.pricing_mode, amount: input.pricing_mode === 'FREE' ? 0 : Number(input.amount), currency: input.currency, booking_available: game.pricing?.booking_available ?? true }, reason: 'ویرایش بازی در مرکز کنترل' }), onSuccess: onSaved });
   const update = (key: keyof GameForm, value: string) => setValues((current) => ({ ...current, [key]: value }));
   const submit = (event: FormEvent) => { event.preventDefault(); const result = gameFormSchema.safeParse(values); if (!result.success) { setErrors(Object.fromEntries(result.error.issues.map((issue) => [String(issue.path[0]), issue.message]))); return; } setErrors({}); mutation.mutate(result.data); };
   return <form onSubmit={submit} className="nexo-surface space-y-5 rounded-xl p-5" aria-label="فرم ویرایش بازی">
@@ -54,7 +55,7 @@ function EditGameForm({ game, onSaved, onCancel }: { game: Game; onSaved: (game:
     <label className="block text-sm">توضیحات<textarea aria-label="توضیحات" className="nexo-input mt-2 min-h-24" value={values.description} onChange={(event) => update('description', event.target.value)} /></label>
     <div className="grid gap-4 sm:grid-cols-3">
       <label className="text-sm">وضعیت<select aria-label="وضعیت بازی" className="nexo-input mt-2" value={values.status} onChange={(event) => update('status', event.target.value)}><option value="DRAFT">پیش‌نویس</option><option value="ACTIVE">فعال</option></select></label>
-      <label className="text-sm">قیمت‌گذاری<select aria-label="نوع قیمت‌گذاری" className="nexo-input mt-2" value={values.pricing_mode} onChange={(event) => update('pricing_mode', event.target.value)}><option value="FREE">رایگان</option><option value="PAID">پولی</option></select></label>
+      <label className="text-sm">قیمت‌گذاری<select aria-label="نوع قیمت‌گذاری" className="nexo-input mt-2" value={values.pricing_mode} onChange={(event) => update('pricing_mode', event.target.value)}><option value="FREE">رایگان</option><option value="PER_ROOM">پرداخت یک‌جا توسط Captain</option><option value="PER_PLAYER">پرداخت جداگانه هر بازیکن</option></select></label>
       <label className="text-sm">مبلغ<input aria-label="مبلغ" disabled={values.pricing_mode === 'FREE'} type="number" min="0" className="nexo-input mt-2" value={values.amount} onChange={(event) => update('amount', event.target.value)} /></label>
     </div>
     <label className="block text-sm">واحد پول<input aria-label="واحد پول" dir="ltr" className="nexo-input mt-2 text-left" value={values.currency} onChange={(event) => update('currency', event.target.value.toUpperCase())} />{errors.currency && <span className="mt-1 block text-xs text-[var(--nexo-danger)]">{errors.currency}</span>}</label>

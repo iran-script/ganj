@@ -1,26 +1,33 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 abstract final class NexoTheme {
-  static const background = Color(0xff071521);
-  static const surface = Color(0xff0e2230);
-  static const surfaceRaised = Color(0xff173044);
-  static const border = Color(0xff355064);
-  static const amber = Color(0xffffb000);
-  static const amberSoft = Color(0xffffcf66);
-  static const foreground = Color(0xfff2f4f6);
-  static const muted = Color(0xffb8c4ce);
-  static const success = Color(0xff00cf91);
+  static const background = Color(0xff0B0920);
+  static const surface = Color(0xff171331);
+  static const surfaceRaised = Color(0xff211B45);
+  static const border = Color(0xff332D59);
+  static const primary = Color(0xff8B5CF6);
+  static const cyan = Color(0xff22D3EE);
+  static const pink = Color(0xffF472B6);
+  static const amber = primary;
+  static const amberSoft = Color(0xffC4B5FD);
+  static const foreground = Color(0xffF8FAFC);
+  static const muted = Color(0xffA9A4C4);
+  static const success = Color(0xff10B981);
   static const danger = Color(0xffff746d);
-  static const information = Color(0xff80c7ff);
+  static const information = cyan;
   static const radiusSmall = 12.0;
   static const radius = 16.0;
   static const radiusLarge = 24.0;
+  static const cardShadow = <BoxShadow>[
+    BoxShadow(color: Color(0x30000000), blurRadius: 20, offset: Offset(0, 8)),
+  ];
 
   static ThemeData get data {
     final scheme = const ColorScheme.dark(
       primary: amber,
       onPrimary: background,
-      secondary: information,
+      secondary: cyan,
       onSecondary: background,
       surface: surface,
       onSurface: foreground,
@@ -30,6 +37,7 @@ abstract final class NexoTheme {
     );
     return ThemeData(
       useMaterial3: true,
+      fontFamily: 'Vazirmatn',
       brightness: Brightness.dark,
       colorScheme: scheme,
       scaffoldBackgroundColor: background,
@@ -37,6 +45,7 @@ abstract final class NexoTheme {
           .textTheme
           .apply(bodyColor: foreground, displayColor: foreground)
           .copyWith(
+            bodySmall: const TextStyle(fontSize: 12, height: 1.55),
             bodyLarge: const TextStyle(fontSize: 16, height: 1.65),
             bodyMedium: const TextStyle(fontSize: 14, height: 1.6),
             titleLarge: const TextStyle(
@@ -52,7 +61,9 @@ abstract final class NexoTheme {
           titleTextStyle: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
       cardTheme: CardThemeData(
           color: surface,
-          elevation: 0,
+          elevation: 1,
+          shadowColor: const Color(0x40000000),
+          surfaceTintColor: Colors.transparent,
           margin: const EdgeInsets.only(bottom: 16),
           shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(radius),
@@ -108,12 +119,28 @@ abstract final class NexoTheme {
         labelTextStyle: WidgetStateProperty.resolveWith((states) => TextStyle(
               color: states.contains(WidgetState.selected) ? amberSoft : muted,
               fontSize: 12,
-              fontWeight: states.contains(WidgetState.selected) ? FontWeight.w700 : FontWeight.w500,
+              fontWeight: states.contains(WidgetState.selected)
+                  ? FontWeight.w700
+                  : FontWeight.w500,
             )),
         iconTheme: WidgetStateProperty.resolveWith((states) => IconThemeData(
               color: states.contains(WidgetState.selected) ? amber : muted,
               size: 23,
             )),
+      ),
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: surface,
+        modalBackgroundColor: surface,
+        showDragHandle: true,
+      ),
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: <TargetPlatform, PageTransitionsBuilder>{
+          TargetPlatform.android: FadeUpwardsPageTransitionsBuilder(),
+          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.linux: FadeUpwardsPageTransitionsBuilder(),
+          TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.windows: FadeUpwardsPageTransitionsBuilder(),
+        },
       ),
     );
   }

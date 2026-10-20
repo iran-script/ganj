@@ -28,7 +28,7 @@ class TeamInvite extends Model
 
     protected function casts(): array
     {
-        return ['expires_at' => 'immutable_datetime', 'revoked_at' => 'immutable_datetime', 'max_uses' => 'integer', 'uses_count' => 'integer'];
+        return ['expires_at' => 'immutable_datetime', 'revoked_at' => 'immutable_datetime', 'responded_at' => 'immutable_datetime', 'max_uses' => 'integer', 'uses_count' => 'integer'];
     }
 
     public function team(): BelongsTo
@@ -36,8 +36,13 @@ class TeamInvite extends Model
         return $this->belongsTo(Team::class);
     }
 
+    public function recipient(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'recipient_user_id');
+    }
+
     public function publicProfile(): array
     {
-        return ['id' => $this->public_id, 'expires_at' => $this->expires_at?->toISOString(), 'max_uses' => $this->max_uses, 'uses_count' => $this->uses_count, 'revoked_at' => $this->revoked_at?->toISOString(), 'created_at' => $this->created_at?->toISOString()];
+        return ['id' => $this->public_id, 'recipient' => $this->recipient ? ['id' => $this->recipient->public_id, 'name' => $this->recipient->name] : null, 'decision' => $this->decision, 'responded_at' => $this->responded_at?->toISOString(), 'expires_at' => $this->expires_at?->toISOString(), 'max_uses' => $this->max_uses, 'uses_count' => $this->uses_count, 'revoked_at' => $this->revoked_at?->toISOString(), 'created_at' => $this->created_at?->toISOString()];
     }
 }

@@ -106,6 +106,46 @@ void main() {
     expect(const ApiError(code: 'UNKNOWN_ERROR', message: '').userMessage,
         isNotEmpty);
   });
+
+  test('maps HTTP status fallbacks to useful API error codes', () async {
+    final expectedCodes = {
+      403: 'AUTHORIZATION_DENIED',
+      404: 'RESOURCE_NOT_FOUND',
+      409: 'CONFLICT',
+      422: 'VALIDATION_FAILED',
+      503: 'SERVER_UNAVAILABLE',
+    };
+    for (final entry in expectedCodes.entries) {
+      final api = ApiClient(
+        store: EmptyStore(),
+        client: MockClient((_) async => http.Response('{}', entry.key)),
+      );
+      await expectLater(
+        api.get('/games'),
+        throwsA(
+          isA<ApiError>().having((error) => error.code, 'code', entry.value),
+        ),
+      );
+    }
+  });
+
+  test('keeps backend error codes for server failures', () async {
+    final api = ApiClient(
+      store: EmptyStore(),
+      client: MockClient((_) async => http.Response(
+            '{"error":{"code":"RUNTIME_BOOTSTRAP_FAILED","message":"Unavailable"}}',
+            500,
+          )),
+    );
+    await expectLater(
+      api.get('/game-sessions'),
+      throwsA(isA<ApiError>().having(
+        (error) => error.code,
+        'code',
+        'RUNTIME_BOOTSTRAP_FAILED',
+      )),
+    );
+  });
 }
 
 class EmptyStore extends SecureStore {

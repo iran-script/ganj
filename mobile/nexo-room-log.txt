@@ -1,0 +1,15 @@
+--------- beginning of main
+10-19 20:32:33.818 I/flutter ( 8890): [IMPORTANT:flutter/shell/platform/android/android_context_vk_impeller.cc(62)] Using the Impeller rendering backend (Vulkan).
+10-19 20:32:33.905 I/flutter ( 8890): The Dart VM service is listening on http://127.0.0.1:44623/RtPeIerweYU=/
+10-19 20:32:34.326 I/flutter ( 8890): NEXO API_BASE_URL=http://2.188.205.35:18100/api/v1
+10-19 20:32:35.748 I/flutter ( 8890): NEXO device_uuid valid=true
+10-19 20:32:35.748 I/flutter ( 8890): NEXO GET http://2.188.205.35:18100/api/v1/me authorization=true device_header=true
+10-19 20:32:36.156 I/flutter ( 8890): NEXO GET /me HTTP 200 content_type=application/json
+10-19 20:32:36.162 I/flutter ( 8890): NEXO device_uuid valid=true
+10-19 20:32:36.801 I/flutter ( 8890): NEXO GET /games HTTP 200 content_type=application/json
+10-19 20:32:36.845 I/flutter ( 8890): NEXO GET /game-sessions HTTP 200 content_type=application/json
+10-19 20:32:40.513 I/flutter ( 8890): NEXO GET /games HTTP 200 content_type=application/json
+10-19 20:32:41.749 I/flutter ( 8890): NEXO GET /games/:id/rooms HTTP 500 content_type=application/json
+10-19 20:32:41.750 I/flutter ( 8890): NEXO GET /games/:id/rooms error.status=500 code=INTERNAL_ERROR exception=ApiError
+10-19 20:32:43.009 I/flutter ( 8890): NEXO GET /games/:id/rooms HTTP 500 content_type=application/json
+10-19 20:32:43.009 I/flutter ( 8890): NEXO GET /games/:id/rooms error.status=500 code=INTERNAL_ERROR exception=ApiError

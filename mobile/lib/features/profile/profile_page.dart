@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../../app/nexo_components.dart';
 import '../../app/nexo_theme.dart';
+import '../../app/nexo_routes.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/auth/user_profile.dart';
 import '../../core/api/api_client.dart';
 import '../../core/errors/api_error.dart';
+import '../booking/payment_history_page.dart';
 import 'profile_repository.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -162,6 +164,12 @@ class _ProfilePageState extends State<ProfilePage> {
           title: const Text('پروفایل من'),
           actions: [
             IconButton(
+              tooltip: 'تیم من',
+              onPressed: () =>
+                  Navigator.of(context).pushNamed(NexoRoutes.teams),
+              icon: const Icon(Icons.groups_2_outlined),
+            ),
+            IconButton(
               tooltip: 'خروج از حساب',
               onPressed: logout,
               icon: const Icon(Icons.logout),
@@ -209,7 +217,22 @@ class _ProfilePageState extends State<ProfilePage> {
                       const NexoCityHeader(
                         eyebrow: 'حساب بازیکن',
                         title: 'پروفایل من',
-                        body: 'اطلاعات حساب مستقیماً از سرویس NEXO بارگیری می‌شود.',
+                        body:
+                            'اطلاعات حساب مستقیماً از سرویس NEXO بارگیری می‌شود.',
+                      ),
+                      Card(
+                        child: ListTile(
+                          leading: const Icon(Icons.receipt_long_outlined),
+                          title: const Text('پرداخت‌های من'),
+                          subtitle: const Text('وضعیت سفارش‌های رزرو بازی'),
+                          trailing: const Icon(Icons.chevron_left),
+                          onTap: () => Navigator.of(context).push<void>(
+                            MaterialPageRoute<void>(
+                              builder: (_) =>
+                                  PaymentHistoryPage(auth: widget.auth),
+                            ),
+                          ),
+                        ),
                       ),
                       Card(
                         child: Padding(
@@ -328,7 +351,7 @@ class _ProfilePageState extends State<ProfilePage> {
             },
           ),
         ),
-        bottomNavigationBar: const NexoBottomNavigation(selectedIndex: 3),
+        bottomNavigationBar: const NexoBottomNavigation(selectedIndex: 4),
       );
 
   String _status(String? status) => switch (status) {

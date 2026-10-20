@@ -15,7 +15,7 @@ use Illuminate\Support\Str;
 use Laravel\Sanctum\HasApiTokens;
 
 #[Fillable(['name', 'email', 'mobile', 'password_hash'])]
-#[Hidden(['id', 'password_hash', 'password', 'remember_token'])]
+#[Hidden(['id', 'identity_uuid', 'password_hash', 'password', 'remember_token'])]
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
@@ -25,7 +25,14 @@ class User extends Authenticatable
     {
         static::creating(function (User $user): void {
             $user->public_id ??= (string) Str::uuid();
+            $user->identity_uuid ??= (string) Str::uuid();
             $user->status ??= UserStatus::Active->value;
+        });
+
+        static::updating(function (User $user): void {
+            if ($user->isDirty('identity_uuid')) {
+                throw new ApiException('IDENTITY_IMMUTABLE', 'The internal user identity cannot be changed.', [], 409);
+            }
         });
     }
 

@@ -17,6 +17,7 @@ class TeamInput
             'create' => ['name' => ['required', 'string', 'max:255'], 'avatar_media_id' => ['sometimes', 'prohibited']],
             'update' => ['name' => ['sometimes', 'required', 'string', 'max:255'], 'avatar_media_id' => ['sometimes', 'prohibited'], 'reason' => $reason],
             'createInvite' => ['expires_at' => ['sometimes', 'nullable', 'date', 'after:now'], 'max_uses' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:2147483647'], 'reason' => $reason],
+            'invitePlayer' => ['user_id' => ['required', 'uuid'], 'expires_at' => ['sometimes', 'nullable', 'date', 'after:now']],
             'join' => ['invite_code' => ['required', 'string', 'max:256']],
             'transfer' => ['user_id' => ['required', 'uuid'], 'reason' => $reason],
             'archive', 'remove', 'revokeInvite' => ['reason' => $reason],

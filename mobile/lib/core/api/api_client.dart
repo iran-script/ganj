@@ -76,7 +76,7 @@ class ApiClient {
         !AppConfig.isAllowedApiBaseUrl(AppConfig.apiBaseUrl)) {
       if (kDebugMode && diagnosticRequest) {
         debugPrint(
-            'NEXO $method request failed kind=insecure_or_invalid_endpoint endpoint=$diagnosticEndpoint');
+            'NEXO $method request failed endpoint=$diagnosticEndpoint code=INSECURE_ENDPOINT kind=insecure_or_invalid_endpoint exception=ApiError');
       }
       throw const ApiError(code: 'INSECURE_ENDPOINT', message: '');
     }
@@ -92,7 +92,7 @@ class ApiClient {
     } catch (failure) {
       if (kDebugMode && diagnosticRequest) {
         debugPrint(
-            'NEXO $method request failed kind=${diagnosticFailureKind(failure)} endpoint=$diagnosticEndpoint');
+            'NEXO $method $diagnosticEndpoint request failed code=AUTH_STORAGE_FAILED kind=${diagnosticFailureKind(failure)} exception=${failure.runtimeType}');
       }
       rethrow;
     }
@@ -132,15 +132,16 @@ class ApiClient {
     } catch (failure) {
       if (kDebugMode && diagnosticRequest) {
         debugPrint(
-            'NEXO $method request failed kind=${diagnosticFailureKind(failure)} endpoint=$diagnosticEndpoint');
+            'NEXO $method $diagnosticEndpoint request failed code=NETWORK_ERROR kind=${diagnosticFailureKind(failure)} exception=${failure.runtimeType}');
       }
       rethrow;
     } finally {
       if (_client == null) client.close();
     }
     if (kDebugMode && diagnosticRequest) {
+      final contentType = response.headers['content-type']?.split(';').first;
       debugPrint(
-          'NEXO $method $diagnosticEndpoint HTTP ${response.statusCode}');
+          'NEXO $method $diagnosticEndpoint HTTP ${response.statusCode} content_type=${contentType ?? 'missing'}');
     }
     Map<String, dynamic> decoded;
     try {
@@ -152,7 +153,14 @@ class ApiClient {
     } on FormatException {
       if (kDebugMode && diagnosticRequest) {
         debugPrint(
-            'NEXO $method response failed kind=invalid_json status=${response.statusCode} endpoint=$diagnosticEndpoint');
+            'NEXO $method $diagnosticEndpoint response failed status=${response.statusCode} code=${response.statusCode < 200 || response.statusCode >= 300 ? _fallbackErrorCode(response.statusCode) : 'INVALID_RESPONSE'} kind=invalid_json exception=FormatException');
+      }
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw ApiError(
+          code: _fallbackErrorCode(response.statusCode),
+          message: '',
+          statusCode: response.statusCode,
+        );
       }
       throw const ApiError(code: 'INVALID_RESPONSE', message: '');
     }
@@ -163,19 +171,45 @@ class ApiClient {
         response.statusCode >= 300 ||
         decoded['error'] != null ||
         nestedData?['error'] != null) {
-      final error = (decoded['error'] ??
-          nestedData?['error'] ??
-          <String, dynamic>{}) as Map<String, dynamic>;
-      if (kDebugMode && diagnosticRequest) {
+      if (response.statusCode >= 500) {
+        final errorValue = decoded['error'] ?? nestedData?['error'];
+        final error = errorValue is Map<String, dynamic>
+            ? errorValue
+            : <String, dynamic>{};
         final rawCode = error['code'];
-        final safeCode =
+        final code =
             rawCode is String && RegExp(r'^[A-Z0-9_]{1,64}$').hasMatch(rawCode)
                 ? rawCode
-                : 'UNKNOWN_ERROR';
-        debugPrint(
-            'NEXO $method $diagnosticEndpoint error.status=${response.statusCode} code=$safeCode');
+                : 'SERVER_UNAVAILABLE';
+        if (kDebugMode && diagnosticRequest) {
+          debugPrint(
+              'NEXO $method $diagnosticEndpoint error.status=${response.statusCode} code=$code exception=ApiError');
+        }
+        throw ApiError(
+          code: code,
+          message: error['message'] is String ? error['message'] as String : '',
+          statusCode: response.statusCode,
+        );
       }
-      final code = error['code'] as String? ?? 'UNKNOWN_ERROR';
+      final errorValue = decoded['error'] ?? nestedData?['error'];
+      final error =
+          errorValue is Map<String, dynamic> ? errorValue : <String, dynamic>{};
+      final rawErrorCode = error['code'];
+      final code = switch (response.statusCode) {
+        401 => 'AUTHENTICATION_REQUIRED',
+        422 => 'VALIDATION_FAILED',
+        429 => 'RATE_LIMITED',
+        _ => rawErrorCode is String
+            ? rawErrorCode
+            : _fallbackErrorCode(response.statusCode),
+      };
+      if (kDebugMode && diagnosticRequest) {
+        final safeCode = RegExp(r'^[A-Z0-9_]{1,64}$').hasMatch(code)
+            ? code
+            : 'UNKNOWN_ERROR';
+        debugPrint(
+            'NEXO $method $diagnosticEndpoint error.status=${response.statusCode} code=$safeCode exception=ApiError');
+      }
       if (response.statusCode == 401 &&
           !path.endsWith('/auth/login') &&
           !path.endsWith('/auth/register')) {
@@ -183,7 +217,7 @@ class ApiClient {
       }
       throw ApiError(
         code: code,
-        message: error['message'] as String? ?? '',
+        message: error['message'] is String ? error['message'] as String : '',
         statusCode: response.statusCode,
         details: error['details'] is Map<String, dynamic>
             ? error['details'] as Map<String, dynamic>
@@ -193,12 +227,27 @@ class ApiClient {
     if (decoded['data'] is List) {
       return {'items': decoded['data'], 'meta': decoded['meta']};
     }
-    return (decoded['data'] ?? <String, dynamic>{}) as Map<String, dynamic>;
+    final data = decoded['data'];
+    if (data == null) return <String, dynamic>{};
+    if (data is Map<String, dynamic>) return data;
+    throw const ApiError(code: 'UNEXPECTED_RESPONSE_SCHEMA', message: '');
   }
+
+  static String _fallbackErrorCode(int statusCode) => switch (statusCode) {
+        401 => 'AUTHENTICATION_REQUIRED',
+        403 => 'AUTHORIZATION_DENIED',
+        404 => 'RESOURCE_NOT_FOUND',
+        409 => 'CONFLICT',
+        422 => 'VALIDATION_FAILED',
+        429 => 'RATE_LIMITED',
+        >= 500 => 'SERVER_UNAVAILABLE',
+        _ => 'HTTP_ERROR',
+      };
 
   Future<void> saveToken(String token) => _store.write(_tokenKey, token);
 
   Future<Uint8List> downloadMedia(String path, {String? expectedMime}) async {
+    final baseUri = _validatedApiBaseUri();
     final generation = OfflineIdentity.instance.generation;
     final accessToken = await token();
     final headers = <String, String>{
@@ -211,7 +260,7 @@ class ApiClient {
     final client = _client ?? http.Client();
     try {
       final request =
-          http.Request('GET', Uri.parse('${AppConfig.apiBaseUrl}$path'))
+          http.Request('GET', baseUri.replace(path: '${baseUri.path}$path'))
             ..headers.addAll(headers);
       final response =
           await client.send(request).timeout(const Duration(seconds: 60));
@@ -254,9 +303,10 @@ class ApiClient {
       throw const ApiError(
           code: 'VALIDATION_FAILED', message: 'Invalid evidence size.');
     }
+    final baseUri = _validatedApiBaseUri();
     final generation = OfflineIdentity.instance.generation;
     final request = http.MultipartRequest('POST',
-        Uri.parse('${AppConfig.apiBaseUrl}/runtime/nodes/$nodeId/evidence'))
+        baseUri.replace(path: '${baseUri.path}/runtime/nodes/$nodeId/evidence'))
       ..headers.addAll({
         'Accept': 'application/json',
         'Authorization': 'Bearer ${await token() ?? ''}',
@@ -298,6 +348,14 @@ class ApiClient {
   Future<String?> token() => _store.read(_tokenKey);
 
   Future<String> deviceId() => _device.getOrCreate();
+
+  Uri _validatedApiBaseUri() {
+    final uri = Uri.tryParse(AppConfig.apiBaseUrl);
+    if (uri == null || !AppConfig.isAllowedApiBaseUrl(AppConfig.apiBaseUrl)) {
+      throw const ApiError(code: 'INSECURE_ENDPOINT', message: '');
+    }
+    return uri;
+  }
 
   static bool isNetworkFailure(Object error) =>
       (error is ApiError &&

@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AdminManagementController;
 use App\Http\Controllers\Api\CheckpointController;
 use App\Http\Controllers\Api\ContentBankController;
+use App\Http\Controllers\Api\GameBookingController;
 use App\Http\Controllers\Api\GameController;
 use App\Http\Controllers\Api\GameMasterController;
 use App\Http\Controllers\Api\GameRoomController;
@@ -107,6 +108,12 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/scenario-versions/{version_id}/'.$action, [ScenarioController::class, 'mutate'])->name('scenarios.'.$action);
         }
         Route::get('/games', [GameController::class, 'index'])->name('games.index');
+        Route::get('/me/bookings', [GameBookingController::class, 'index'])->name('bookings.index');
+        Route::get('/me/payments', [GameBookingController::class, 'payments'])->name('payments.index');
+        Route::post('/games/{game_id}/bookings', [GameBookingController::class, 'create'])->middleware('throttle:booking-create')->whereUuid('game_id')->name('bookings.create');
+        Route::get('/bookings/{booking_id}', [GameBookingController::class, 'show'])->whereUuid('booking_id')->name('bookings.show');
+        Route::post('/payment-orders/{order_id}/checkout', [GameBookingController::class, 'checkout'])->middleware('throttle:payment-actions')->whereUuid('order_id')->name('payments.checkout');
+        Route::post('/payment-orders/{order_id}/test-confirm', [GameBookingController::class, 'confirmTestPayment'])->middleware('throttle:payment-actions')->whereUuid('order_id')->name('payments.test-confirm');
         Route::get('/games/{game_id}/rooms', [GameRoomController::class, 'index'])->name('rooms.index');
         Route::post('/games/{game_id}/rooms', [GameRoomController::class, 'create'])->name('rooms.create');
         Route::get('/rooms/{room_id}', [GameRoomController::class, 'show'])->name('rooms.show');
@@ -137,11 +144,20 @@ Route::prefix('v1')->group(function (): void {
         Route::post('/game-sessions/{session_id}/players/{player_id}/disqualify', [GameMasterController::class, 'disqualify'])->name('gamemaster.disqualify');
         Route::get('/teams', [TeamController::class, 'index'])->name('teams.index');
         Route::post('/teams', [TeamController::class, 'create'])->name('teams.create');
-        Route::post('/teams/join', [TeamController::class, 'join'])->name('teams.join');
+        Route::post('/teams/join', [TeamController::class, 'join'])->middleware('throttle:team-invites')->name('teams.join');
+        Route::get('/team-invites/{invite_code}', [TeamController::class, 'previewInvite'])->where('invite_code', '[A-Za-z0-9_-]{16,64}')->middleware('throttle:team-invites')->name('teamInvites.preview');
+        Route::get('/teams/{team_id}/join-requests', [TeamController::class, 'joinRequests'])->whereUuid('team_id')->name('teams.joinRequests');
+        Route::post('/teams/{team_id}/join-requests/{request_id}/accept', [TeamController::class, 'acceptJoinRequest'])->whereUuid('team_id')->whereUuid('request_id')->name('teams.joinRequests.accept');
+        Route::post('/teams/{team_id}/join-requests/{request_id}/decline', [TeamController::class, 'declineJoinRequest'])->whereUuid('team_id')->whereUuid('request_id')->name('teams.joinRequests.decline');
+        Route::get('/players/{player_id}', [TeamController::class, 'searchPlayer'])->whereUuid('player_id')->middleware('throttle:team-invites')->name('players.show');
+        Route::get('/me/team-invitations', [TeamController::class, 'incomingInvitations'])->name('teams.invitations.incoming');
+        Route::post('/me/team-invitations/{invite_id}/accept', [TeamController::class, 'acceptInvitation'])->whereUuid('invite_id')->name('teams.invitations.accept');
+        Route::post('/me/team-invitations/{invite_id}/decline', [TeamController::class, 'declineInvitation'])->whereUuid('invite_id')->name('teams.invitations.decline');
         Route::get('/teams/{team_id}', [TeamController::class, 'show'])->name('teams.show');
         Route::patch('/teams/{team_id}', [TeamController::class, 'update'])->name('teams.update');
         Route::get('/teams/{team_id}/invites', [TeamController::class, 'invites'])->name('teams.invites');
         Route::post('/teams/{team_id}/invites', [TeamController::class, 'createInvite'])->name('teams.createInvite');
+        Route::post('/teams/{team_id}/player-invitations', [TeamController::class, 'invitePlayer'])->whereUuid('team_id')->middleware('throttle:team-invites')->name('teams.invitePlayer');
         Route::delete('/teams/{team_id}/invites/{invite_id}', [TeamController::class, 'revokeInvite'])->name('teams.revokeInvite');
         Route::post('/teams/{team_id}/leave', [TeamController::class, 'leave'])->name('teams.leave');
         Route::delete('/teams/{team_id}/members/{user_id}', [TeamController::class, 'remove'])->name('teams.remove');

@@ -15,7 +15,10 @@ class TeamRequest extends FormRequest
 
     public function rules(): array
     {
-        return TeamInput::rules($this->route()->getActionMethod());
+        return match ($this->route()->getActionMethod()) {
+            'invitePlayer' => ['user_id' => ['required', 'uuid'], 'expires_at' => ['sometimes', 'nullable', 'date', 'after:now']],
+            default => TeamInput::rules($this->route()->getActionMethod()),
+        };
     }
 
     public function after(): array

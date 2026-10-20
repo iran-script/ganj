@@ -27,6 +27,18 @@ class TeamController extends Controller
         return response()->json(['data' => $this->teams->show($request->user(), $team_id)])->header('Cache-Control', 'no-store');
     }
 
+    public function searchPlayer(TeamRequest $request, string $player_id): JsonResponse
+    {
+        return response()->json(['data' => $this->teams->findPlayer($request->user(), $player_id)])
+            ->header('Cache-Control', 'no-store');
+    }
+
+    public function incomingInvitations(TeamRequest $request): JsonResponse
+    {
+        return response()->json(['data' => $this->teams->incomingInvitations($request->user())])
+            ->header('Cache-Control', 'no-store');
+    }
+
     public function invites(TeamRequest $request, string $team_id): JsonResponse
     {
         $page = $this->teams->invites($request->user(), $team_id, $request->validated());
@@ -44,6 +56,28 @@ class TeamController extends Controller
         return $this->mutation($request, 'join');
     }
 
+    public function previewInvite(TeamRequest $request, string $invite_code): JsonResponse
+    {
+        return response()->json(['data' => $this->teams->previewInvite($request->user(), $invite_code)])
+            ->header('Cache-Control', 'no-store');
+    }
+
+    public function joinRequests(TeamRequest $request, string $team_id): JsonResponse
+    {
+        return response()->json(['data' => $this->teams->joinRequests($request->user(), $team_id)])
+            ->header('Cache-Control', 'no-store');
+    }
+
+    public function acceptJoinRequest(TeamRequest $request, string $team_id, string $request_id): JsonResponse
+    {
+        return $this->decideJoinRequest($request, $team_id, $request_id, true);
+    }
+
+    public function declineJoinRequest(TeamRequest $request, string $team_id, string $request_id): JsonResponse
+    {
+        return $this->decideJoinRequest($request, $team_id, $request_id, false);
+    }
+
     public function update(TeamRequest $request, string $team_id): Response
     {
         return $this->mutation($request, 'update', $team_id);
@@ -52,6 +86,23 @@ class TeamController extends Controller
     public function createInvite(TeamRequest $request, string $team_id): Response
     {
         return $this->mutation($request, 'createInvite', $team_id, status: 201);
+    }
+
+    public function invitePlayer(TeamRequest $request, string $team_id): JsonResponse
+    {
+        $data = $this->teams->invitePlayer($request->user(), $team_id, $request->validated()['user_id'], $request->validated()['expires_at'] ?? null);
+
+        return response()->json(['data' => $data], 201)->header('Cache-Control', 'no-store');
+    }
+
+    public function acceptInvitation(TeamRequest $request, string $invite_id): JsonResponse
+    {
+        return $this->respondToInvitation($request, $invite_id, true);
+    }
+
+    public function declineInvitation(TeamRequest $request, string $invite_id): JsonResponse
+    {
+        return $this->respondToInvitation($request, $invite_id, false);
     }
 
     public function revokeInvite(TeamRequest $request, string $team_id, string $invite_id): Response
@@ -84,6 +135,18 @@ class TeamController extends Controller
         $data = $this->teams->execute($request->user(), $action, $request->validated(), $teamId, $targetId, $request->header('Idempotency-Key'));
 
         return ($status === 204 ? response()->noContent() : response()->json(['data' => $data], $status))->header('Cache-Control', 'no-store');
+    }
+
+    private function respondToInvitation(TeamRequest $request, string $inviteId, bool $accept): JsonResponse
+    {
+        return response()->json(['data' => $this->teams->respondToInvitation($request->user(), $inviteId, $accept)])
+            ->header('Cache-Control', 'no-store');
+    }
+
+    private function decideJoinRequest(TeamRequest $request, string $teamId, string $requestId, bool $accept): JsonResponse
+    {
+        return response()->json(['data' => $this->teams->decideJoinRequest($request->user(), $teamId, $requestId, $accept)])
+            ->header('Cache-Control', 'no-store');
     }
 
     private function collection(CursorPaginator $page, TeamRequest $request, array $data): JsonResponse

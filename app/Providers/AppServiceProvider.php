@@ -92,6 +92,9 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('runtime-submit', fn (Request $request) => Limit::perMinute(120)->by((string) $request->user()?->id));
         RateLimiter::for('qr-scan', fn (Request $request) => Limit::perMinute(120)->by((string) $request->user()?->id.':'.($request->header('X-Device-Id') ?? 'missing')));
         RateLimiter::for('admin-sensitive', fn (Request $request) => Limit::perMinute(30)->by((string) $request->user()?->id));
+        RateLimiter::for('booking-create', fn (Request $request) => Limit::perMinute(8)->by((string) ($request->user()?->id ?? $request->ip())));
+        RateLimiter::for('payment-actions', fn (Request $request) => Limit::perMinute(20)->by((string) ($request->user()?->id ?? $request->ip())));
+        RateLimiter::for('team-invites', fn (Request $request) => Limit::perMinute(30)->by((string) ($request->user()?->id ?? $request->ip())));
         Event::listen(JobProcessed::class, function (): void {
             try {
                 Redis::connection()->setex('phase0:queue-worker-heartbeat', 120, (string) now()->timestamp);

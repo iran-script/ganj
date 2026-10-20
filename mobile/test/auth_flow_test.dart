@@ -45,6 +45,8 @@ void main() {
 
     expect(find.text('شماره موبایل یا رمز عبور صحیح نیست'), findsOneWidget);
     expect(find.text('09120000001'), findsOneWidget);
+    expect(auth.error?.code, 'INVALID_CREDENTIALS');
+    expect(auth.error?.statusCode, 401);
     expect(tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
         isNotNull);
     expect(tester.takeException(), isNull);
@@ -58,6 +60,11 @@ void main() {
         store: store,
         client: MockClient((request) async {
           if (request.url.path.endsWith('/auth/login')) {
+            expect(request.method, 'POST');
+            expect(request.url.toString(),
+                'http://2.188.205.35:18100/api/v1/auth/login');
+            expect(request.headers['accept'], 'application/json');
+            expect(request.headers['content-type'], 'application/json');
             expect(jsonDecode(request.body), {
               'mobile': '09120000001',
               'password': 'test-password',
@@ -70,11 +77,32 @@ void main() {
                 jsonEncode({
                   'data': {
                     'token': 'test-token',
-                    'user': {'id': 'public-user', 'name': 'Test Player'},
-                    'device': {'device_uuid': deviceUuid}
+                    'user': {
+                      'id': 'public-user',
+                      'name': 'Test Player',
+                      'email': 'player@example.test',
+                      'mobile': '09120000001',
+                      'status': 'ACTIVE',
+                      'roles': ['PLAYER'],
+                      'last_login_at': '2026-10-18T10:00:00Z',
+                      'created_at': '2026-10-01T10:00:00Z',
+                      'updated_at': '2026-10-18T10:00:00Z',
+                    },
+                    'device': {
+                      'id': 'public-device',
+                      'device_uuid': deviceUuid,
+                      'device_name': 'NEXO Player',
+                      'platform': 'android',
+                      'app_version': '0.1.0',
+                      'last_seen_at': '2026-10-18T10:00:00Z',
+                      'revoked_at': null,
+                    }
                   }
                 }),
-                200);
+                200,
+                headers: const {
+                  'content-type': 'application/json; charset=utf-8'
+                });
           }
           expect(request.url.path, endsWith('/me'));
           expect(request.headers['Authorization'], 'Bearer test-token');
@@ -106,6 +134,119 @@ void main() {
     expect(auth.signingIn, isFalse);
     expect(auth.authenticated, isFalse);
     auth.dispose();
+  });
+
+  test('login maps Laravel 422 validation envelopes', () async {
+    final auth = AuthController(ApiClient(
+      store: MemoryStore(),
+      client: MockClient((_) async => http.Response(
+            jsonEncode({
+              'error': {
+                'code': 'VALIDATION_FAILED',
+                'message': 'The request contains invalid fields.',
+                'details': {
+                  'fields': {
+                    'mobile': ['The mobile field format is invalid.']
+                  }
+                }
+              }
+            }),
+            422,
+            headers: const {'content-type': 'application/json'},
+          )),
+    ));
+
+    await expectLater(
+      auth.login('invalid-mobile', 'test-password'),
+      throwsA(isA<ApiError>()
+          .having((error) => error.statusCode, 'status', 422)
+          .having((error) => error.code, 'code', 'VALIDATION_FAILED')),
+    );
+    expect(auth.error?.fieldMessage('mobile'), isNotNull);
+    auth.dispose();
+  });
+
+  test('HTML gateway errors become a localized server unavailable error',
+      () async {
+    final auth = AuthController(ApiClient(
+      store: MemoryStore(),
+      client: MockClient((_) async => http.Response(
+            '<html>Bad Gateway</html>',
+            502,
+            headers: const {'content-type': 'text/html'},
+          )),
+    ));
+
+    await expectLater(
+      auth.login('09120000001', 'test-password'),
+      throwsA(isA<ApiError>()
+          .having((error) => error.statusCode, 'status', 502)
+          .having((error) => error.code, 'code', 'SERVER_UNAVAILABLE')),
+    );
+    expect(auth.error?.userMessage, contains('سرویس'));
+    auth.dispose();
+  });
+
+  test('malformed successful response is an invalid response', () async {
+    final auth = AuthController(ApiClient(
+      store: MemoryStore(),
+      client: MockClient((_) async => http.Response(
+            '<html>unexpected</html>',
+            200,
+            headers: const {'content-type': 'text/html'},
+          )),
+    ));
+
+    await expectLater(
+      auth.login('09120000001', 'test-password'),
+      throwsA(isA<ApiError>()
+          .having((error) => error.code, 'code', 'INVALID_RESPONSE')),
+    );
+    auth.dispose();
+  });
+
+  test('incomplete successful envelope is an unexpected schema', () async {
+    final auth = AuthController(ApiClient(
+      store: MemoryStore(),
+      client: MockClient((_) async => http.Response(
+            '{"data":{"user":{"id":"public-user","name":"Test"}}}',
+            200,
+            headers: const {'content-type': 'application/json'},
+          )),
+    ));
+
+    await expectLater(
+      auth.login('09120000001', 'test-password'),
+      throwsA(isA<ApiError>()
+          .having((error) => error.code, 'code', 'UNEXPECTED_RESPONSE_SCHEMA')),
+    );
+    expect(auth.error?.userMessage, contains('ساختار پاسخ'));
+    auth.dispose();
+  });
+
+  test('HTTP throttling and service failures use distinct localized errors',
+      () async {
+    final cases = <int, String>{
+      429: 'RATE_LIMITED',
+      500: 'SERVER_UNAVAILABLE',
+      503: 'SERVER_UNAVAILABLE',
+    };
+
+    for (final entry in cases.entries) {
+      final auth = AuthController(ApiClient(
+        store: MemoryStore(),
+        client: MockClient((_) async => http.Response('', entry.key)),
+      ));
+
+      await expectLater(
+        auth.login('09120000001', 'test-password'),
+        throwsA(isA<ApiError>()
+            .having((error) => error.statusCode, 'status', entry.key)
+            .having((error) => error.code, 'code', entry.value)),
+      );
+      expect(auth.error?.userMessage, isNotEmpty);
+      auth.dispose();
+    }
   });
 
   testWidgets('login timeout displays an error and allows another attempt',

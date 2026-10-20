@@ -73,16 +73,72 @@ class TeamRepository {
             idempotencyKey: _uuid.v4()),
       );
 
-  Future<NexoTeam> join(String inviteCode) async => NexoTeam.fromJson(
-        await api.post('/teams/join',
+  Future<Map<String, dynamic>> previewInvite(String inviteCode) =>
+      api.get('/team-invites/${Uri.encodeComponent(inviteCode.trim())}');
+
+  Future<JoinRequestResult> join(String inviteCode) async =>
+      JoinRequestResult.fromJson(await api.post('/teams/join',
             body: {'invite_code': inviteCode.trim()},
             idempotent: true,
-            idempotencyKey: _uuid.v4()),
-      );
+            idempotencyKey: _uuid.v4()));
 
   Future<Map<String, dynamic>> createInvite(String teamId) => api.post(
         '/teams/$teamId/invites',
+        body: {'expires_at': DateTime.now().toUtc().add(const Duration(days: 7)).toIso8601String()},
       );
+
+  Future<List<JoinRequest>> joinRequests(String teamId) async {
+    final response = await api.get('/teams/$teamId/join-requests');
+    return (response['items'] as List? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(JoinRequest.fromJson)
+        .toList(growable: false);
+  }
+
+  Future<void> respondToJoinRequest(String teamId, String requestId,
+      {required bool accept}) async {
+    await api.post('/teams/$teamId/join-requests/$requestId/${accept ? 'accept' : 'decline'}',
+        idempotent: true,
+        idempotencyKey: _uuid.v4());
+  }
+
+  Future<Map<String, dynamic>> findPlayer(String publicId) =>
+      api.get('/players/${publicId.trim()}');
+
+  Future<void> invitePlayer(String teamId, String publicId) async {
+    await api.post('/teams/$teamId/player-invitations',
+        body: {'user_id': publicId.trim()},
+        idempotent: true,
+        idempotencyKey: _uuid.v4());
+  }
+
+  Future<List<TeamInvitation>> incomingInvitations() async {
+    final response = await api.get('/me/team-invitations');
+    return (response['items'] as List? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(TeamInvitation.fromJson)
+        .toList(growable: false);
+  }
+
+  Future<List<SentTeamInvitation>> outgoingInvitations(String teamId) async {
+    final response = await api.get('/teams/$teamId/invites');
+    return (response['items'] as List? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(SentTeamInvitation.fromJson)
+        .toList(growable: false);
+  }
+
+  Future<void> revokeInvitation(String teamId, String invitationId) async {
+    await api.delete('/teams/$teamId/invites/$invitationId');
+  }
+
+  Future<void> respondToInvitation(String inviteId,
+      {required bool accept}) async {
+    await api.post(
+        '/me/team-invitations/$inviteId/${accept ? 'accept' : 'decline'}',
+        idempotent: true,
+        idempotencyKey: _uuid.v4());
+  }
 
   Future<void> leave(String teamId) async {
     await api.post('/teams/$teamId/leave');
@@ -95,6 +151,119 @@ class TeamRepository {
   Future<void> transferCaptaincy(String teamId, String userId) async {
     await api
         .post('/teams/$teamId/transfer-captaincy', body: {'user_id': userId});
+  }
+}
+
+class JoinRequestResult {
+  const JoinRequestResult({required this.id, required this.status, required this.teamName});
+  final String id;
+  final String status;
+  final String teamName;
+
+  factory JoinRequestResult.fromJson(Map<String, dynamic> json) => JoinRequestResult(
+        id: json['id'] as String? ?? '',
+        status: json['status'] as String? ?? 'UNKNOWN',
+        teamName: json['team_name'] as String? ?? '',
+      );
+}
+
+class JoinRequest {
+  const JoinRequest({required this.id, required this.status, required this.playerId, required this.playerName});
+  final String id;
+  final String status;
+  final String playerId;
+  final String playerName;
+
+  factory JoinRequest.fromJson(Map<String, dynamic> json) {
+    final player = json['player'] as Map<String, dynamic>? ?? const {};
+    return JoinRequest(
+      id: json['id'] as String? ?? '',
+      status: json['status'] as String? ?? 'UNKNOWN',
+      playerId: player['id'] as String? ?? '',
+      playerName: player['name'] as String? ?? 'بازیکن',
+    );
+  }
+}
+
+class TeamInvitation {
+  const TeamInvitation({
+    required this.id,
+    required this.teamId,
+    required this.teamName,
+    required this.captainName,
+    required this.status,
+    this.expiresAt,
+  });
+
+  final String id;
+  final String teamId;
+  final String teamName;
+  final String captainName;
+  final String status;
+  final String? expiresAt;
+
+  bool get isPending {
+    final expiry = expiresAt;
+    final isExpired = expiry != null &&
+        DateTime.tryParse(expiry)?.isBefore(DateTime.now()) == true;
+    return status == 'PENDING' && !isExpired;
+  }
+
+  String get effectiveStatus =>
+      status == 'PENDING' && !isPending ? 'EXPIRED' : status;
+
+  factory TeamInvitation.fromJson(Map<String, dynamic> json) {
+    final team = json['team'] as Map<String, dynamic>? ?? const {};
+    final captain = json['captain'] as Map<String, dynamic>? ?? const {};
+    return TeamInvitation(
+      id: json['id'] as String? ?? '',
+      teamId: team['id'] as String? ?? '',
+      teamName: team['name'] as String? ?? '',
+      captainName: captain['name'] as String? ?? '',
+      status: json['status'] as String? ?? 'UNKNOWN',
+      expiresAt: json['expires_at'] as String?,
+    );
+  }
+}
+
+class SentTeamInvitation {
+  const SentTeamInvitation({
+    required this.id,
+    required this.recipientName,
+    required this.decision,
+    required this.usesCount,
+    this.maxUses,
+    this.expiresAt,
+    this.revokedAt,
+  });
+
+  final String id;
+  final String recipientName;
+  final String decision;
+  final int usesCount;
+  final int? maxUses;
+  final String? expiresAt;
+  final String? revokedAt;
+
+  bool get isPending {
+    final expiry = expiresAt;
+    final isExpired = expiry != null &&
+        DateTime.tryParse(expiry)?.isBefore(DateTime.now()) == true;
+    return decision == 'PENDING' && revokedAt == null && !isExpired;
+  }
+
+  factory SentTeamInvitation.fromJson(Map<String, dynamic> json) {
+    final recipient = json['recipient'] as Map<String, dynamic>? ?? const {};
+    return SentTeamInvitation(
+      id: json['id'] as String? ?? '',
+      recipientName: recipient['name'] as String? ?? 'دعوت با کد تیم',
+      decision:
+          recipient.isEmpty ? 'CODE' : json['decision'] as String? ?? 'UNKNOWN',
+      usesCount: (json['uses_count'] as num?)?.toInt() ?? 0,
+      maxUses: (json['max_uses'] as num?)?.toInt(),
+      expiresAt: json['expires_at'] as String?,
+      revokedAt: json['revoked_at'] as String?,
+    );
   }
 }
 

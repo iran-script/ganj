@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 import '../../app/nexo_components.dart';
 import '../../core/api/api_client.dart';
 import '../../core/auth/auth_controller.dart';
-import '../rooms/room_pages.dart';
+import '../../core/errors/api_error.dart';
+import '../booking/game_details_page.dart';
 
 class GamesPage extends StatefulWidget {
   const GamesPage({required this.auth, super.key});
@@ -50,7 +51,9 @@ class _GamesPageState extends State<GamesPage> {
                 return NexoErrorView(
                   message: offline
                       ? 'برای دیدن بازی‌ها به اینترنت وصل شوید.'
-                      : 'دریافت بازی‌ها انجام نشد. دوباره تلاش کنید.',
+                      : snapshot.error is ApiError
+                          ? (snapshot.error! as ApiError).userMessage
+                          : 'دریافت بازی‌ها انجام نشد. دوباره تلاش کنید.',
                   offline: offline,
                   onRetry: _refresh,
                 );
@@ -67,7 +70,8 @@ class _GamesPageState extends State<GamesPage> {
                           SizedBox(height: 100),
                           NexoEmptyView(
                             title: 'بازی‌ای در دسترس نیست',
-                            message: 'بازی‌های منتشرشده در این بخش نمایش داده می‌شوند.',
+                            message:
+                                'بازی‌های منتشرشده در این بخش نمایش داده می‌شوند.',
                             icon: Icons.explore_outlined,
                           ),
                         ],
@@ -94,8 +98,8 @@ class _GamesPageState extends State<GamesPage> {
                               trailing: const Icon(Icons.chevron_left),
                               onTap: () => Navigator.of(context).push(
                                 MaterialPageRoute<void>(
-                                  builder: (_) =>
-                                      RoomListPage(auth: widget.auth, game: game),
+                                  builder: (_) => GameDetailsPage(
+                                      auth: widget.auth, game: game),
                                 ),
                               ),
                             ),

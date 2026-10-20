@@ -9,7 +9,16 @@ export type CreateGameInput = {
   city?: string;
   default_timezone: string;
   status: 'DRAFT' | 'ACTIVE';
-  pricing?: { mode: 'FREE' | 'PAID'; amount?: number; currency?: string };
+  pricing?: {
+    mode: 'FREE' | 'PAID' | 'PER_ROOM' | 'PER_PLAYER';
+    amount?: number;
+    currency?: string;
+    booking_available?: boolean;
+    payment_deadline_minutes?: number | null;
+    max_active_reservations?: number | null;
+    refund_policy?: string | null;
+    cancellation_policy?: string | null;
+  };
   scenario_version_id?: string;
   reason: string;
 };

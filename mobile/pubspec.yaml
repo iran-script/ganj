@@ -1,7 +1,7 @@
 name: nexo_player
 description: NEXO Player gameplay client.
 publish_to: 'none'
-version: 0.1.0+1
+version: 0.1.0+2
 
 environment:
   sdk: '>=3.4.0 <4.0.0'
@@ -12,17 +12,21 @@ dependencies:
     sdk: flutter
   flutter_localizations:
     sdk: flutter
+  flutter_map: 8.3.2
   flutter_secure_storage: ^9.2.2
   geolocator: ^13.0.2
   http: ^1.2.2
   image_picker: ^1.2.4
   just_audio: ^0.10.6
+  latlong2: 0.10.1
   mobile_scanner: ^6.0.2
   open_filex: ^4.7.0
   path: ^1.9.0
   path_provider: ^2.1.6
+  qr_flutter: ^4.1.0
   record: ^7.1.2
   sqflite: ^2.4.1
+  url_launcher: ^6.3.2
   uuid: ^4.5.1
 
 dev_dependencies:
@@ -32,3 +36,10 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  fonts:
+    - family: Vazirmatn
+      fonts:
+        - asset: assets/fonts/Vazirmatn-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Vazirmatn-Bold.ttf
+          weight: 700

@@ -330,10 +330,10 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
 
     setState(() => joining = true);
     try {
-      final team = await TeamRepository(widget.auth.api).join(inviteCode);
+      final request = await TeamRepository(widget.auth.api).join(inviteCode);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('به تیم «${team.name}» پیوستید.')),
+        SnackBar(content: Text('درخواست پیوستن به تیم «${request.teamName}» برای تأیید کاپیتان ارسال شد.')),
       );
       await _refresh();
     } catch (error) {

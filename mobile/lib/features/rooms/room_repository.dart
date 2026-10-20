@@ -1,4 +1,7 @@
+import 'package:flutter/foundation.dart';
+
 import '../../core/api/api_client.dart';
+import '../../core/errors/api_error.dart';
 
 class GameRoomSummary {
   const GameRoomSummary(
@@ -46,10 +49,22 @@ class RoomRepository {
   final ApiClient api;
   Future<List<GameRoomSummary>> list(String gameId) async {
     final response = await api.get('/games/$gameId/rooms');
-    return (response['items'] as List? ?? const [])
-        .whereType<Map<String, dynamic>>()
-        .map(GameRoomSummary.fromJson)
-        .toList(growable: false);
+    try {
+      final items = response['items'];
+      if (items is! List) {
+        throw const ApiError(code: 'UNEXPECTED_RESPONSE_SCHEMA', message: '');
+      }
+      return items
+          .whereType<Map<String, dynamic>>()
+          .map(GameRoomSummary.fromJson)
+          .toList(growable: false);
+    } catch (failure) {
+      if (kDebugMode) {
+        debugPrint(
+            'NEXO GET /games/:id/rooms response failed status=200 code=ROOM_RESPONSE_PARSE_FAILED exception=${failure.runtimeType}');
+      }
+      rethrow;
+    }
   }
 
   Future<GameRoomSummary> show(String roomId) async =>

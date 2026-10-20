@@ -86,7 +86,7 @@ Before relying on a package's API, confirm its installed version:
 - Pure copy, styling, and layout-only changes do not require new or updated tests.
 - When test coverage applies, run the affected tests and ensure they pass.
 - Test the changed behavior and its important failure modes, but do not add tests beyond them.
-- Read the `testing-best-practices` skill before writing tests.
+- Read `docs/testing/laravel-feature-testing.md` before writing or updating tests.
 
 === laravel/core rules ===
 
@@ -131,7 +131,7 @@ Before relying on a package's API, confirm its installed version:
 
 - This project uses PHPUnit. Create tests with `php artisan make:test --phpunit {name}`.
 - Do not include the test suite directory in `{name}`. Use `SomeFeatureTest`, not `Feature/SomeFeatureTest`.
-- Read the `testing-best-practices` skill for guidance on coverage, naming, structure, dependency isolation, and review.
+- Follow `docs/testing/laravel-feature-testing.md` for coverage, naming, structure, dependency isolation, and review.
 
 ## Running Tests
 

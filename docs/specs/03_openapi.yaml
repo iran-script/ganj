@@ -303,6 +303,119 @@ paths:
             type: string
             maxLength: 512
       description: 'Member-safe Team projection; archived history accessible to former members. Unrelated resources are hidden except explicitly privileged support scope. Never includes private identity data or membership history of others.'
+  '/players/{player_id}':
+    get:
+      tags: [Teams]
+      operationId: findPlayerForTeamInvitation
+      security:
+        - bearerAuth: []
+      description: Resolve a registered active player by public UUID. Returns only public ID and name; contact details are never included.
+      parameters:
+        - name: player_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Public player identity.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: {$ref: '#/components/schemas/PublicPlayer'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /me/team-invitations:
+    get:
+      tags: [Teams]
+      operationId: listIncomingTeamInvitations
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Targeted team invitations for the authenticated user; no private contact information.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: {$ref: '#/components/schemas/IncomingTeamInvitation'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  '/me/team-invitations/{invite_id}/accept':
+    post:
+      tags: [Teams]
+      operationId: acceptTeamInvitation
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: invite_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Membership created after explicit recipient acceptance.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TeamInvitationDecisionResponse'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  '/me/team-invitations/{invite_id}/decline':
+    post:
+      tags: [Teams]
+      operationId: declineTeamInvitation
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: invite_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Invitation declined without creating membership.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TeamInvitationDecisionResponse'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  '/teams/{team_id}/player-invitations':
+    post:
+      tags: [Teams]
+      operationId: inviteRegisteredPlayerToTeam
+      security:
+        - bearerAuth: []
+      description: Captain-only targeted invitation. The recipient must accept before membership is created. The operation is rate limited and pending duplicate requests replay the same invitation.
+      parameters:
+        - name: team_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TargetedTeamInvitationCreate'}
+      responses:
+        '201':
+          description: Invitation created or existing pending invitation returned.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TargetedTeamInvitationResponse'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '429': {$ref: '#/components/responses/RateLimited'}
   '/teams/{team_id}':
     get:
       tags:
@@ -527,11 +640,11 @@ paths:
           bearerAuth: []
       responses:
         '200':
-          description: Success
+          description: Join request recorded; membership remains unchanged until captain approval.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TeamResponse'
+                $ref: '#/components/schemas/TeamJoinRequestResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -556,7 +669,102 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/TeamJoin'
-      description: 'Consumes an opaque invite atomically under Team/invite locks. Errors: TEAM_FULL, INVITE_EXPIRED, INVITE_REVOKED, ALREADY_TEAM_MEMBER, ACTION_NOT_ALLOWED (exhausted), STATE_TRANSITION_INVALID (archived), RESOURCE_NOT_FOUND. Organization-associated Teams also require current tenant access.'
+      description: 'Validates the opaque invite and creates an idempotent pending request under Team/invite locks. It never creates membership. Only the Team captain may approve or decline the request. Errors include TEAM_FULL, TEAM_LOCKED, INVITE_EXPIRED, INVITE_REVOKED, INVITE_EXHAUSTED, ALREADY_TEAM_MEMBER, and RESOURCE_NOT_FOUND.'
+  '/team-invites/{invite_code}':
+    get:
+      tags: [Teams]
+      operationId: previewTeamInvite
+      security:
+        - bearerAuth: []
+      description: Rate limited. Returns only team name, captain name, public capacity information, and invite expiry. The opaque token is stored only as a hash and contains no resource identifiers.
+      parameters:
+        - name: invite_code
+          in: path
+          required: true
+          schema: {type: string, minLength: 16, maxLength: 64, pattern: '^[A-Za-z0-9_-]+$'}
+      responses:
+        '200':
+          description: Safe invitation preview.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TeamInvitePreviewResponse'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  '/teams/{team_id}/join-requests':
+    get:
+      tags: [Teams]
+      operationId: listTeamJoinRequests
+      security:
+        - bearerAuth: []
+      description: Captain-only list of incoming code and QR join requests.
+      parameters:
+        - name: team_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Join request history for the team.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TeamJoinRequestListResponse'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  '/teams/{team_id}/join-requests/{request_id}/accept':
+    post:
+      tags: [Teams]
+      operationId: acceptTeamJoinRequest
+      security:
+        - bearerAuth: []
+      description: Captain-only. Membership and invite use are recorded atomically only after approval.
+      parameters:
+        - name: team_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: request_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Request accepted.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TeamJoinRequestDecisionResponse'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  '/teams/{team_id}/join-requests/{request_id}/decline':
+    post:
+      tags: [Teams]
+      operationId: declineTeamJoinRequest
+      security:
+        - bearerAuth: []
+      description: Captain-only. A declined request never creates membership.
+      parameters:
+        - name: team_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: request_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Request declined.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TeamJoinRequestDecisionResponse'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
   '/teams/{team_id}/leave':
     post:
       tags:
@@ -2939,6 +3147,67 @@ paths:
         required: true
         schema:
           type: string
+  /me/bookings:
+    get:
+      tags: [Billing]
+      operationId: listMyGameBookings
+      summary: List bookings visible to the authenticated player
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Bookings and participant payment state, content: {application/json: {schema: {$ref: '#/components/schemas/GameBookingList'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /me/payments:
+    get:
+      tags: [Billing]
+      operationId: listMyPaymentOrders
+      summary: List payment orders payable by the authenticated player
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Payment orders, content: {application/json: {schema: {$ref: '#/components/schemas/PaymentOrderList'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /games/{game_id}/bookings:
+    post:
+      tags: [Billing]
+      operationId: createGameBooking
+      summary: Create a booking and freeze the eligible team roster and price
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: game_id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 8, maxLength: 255}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: false, required: [team_id, room_name], properties: {team_id: {type: string, format: uuid}, room_name: {type: string, minLength: 1, maxLength: 120}}}
+      responses:
+        '201': {description: Booking created, content: {application/json: {schema: {$ref: '#/components/schemas/GameBookingSuccess'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /bookings/{booking_id}:
+    get:
+      tags: [Billing]
+      operationId: getGameBooking
+      security: [{bearerAuth: []}]
+      parameters: [{name: booking_id, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        '200': {description: Booking, content: {application/json: {schema: {$ref: '#/components/schemas/GameBookingSuccess'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /payment-orders/{order_id}/checkout:
+    post:
+      tags: [Billing]
+      operationId: startPaymentCheckout
+      summary: Start checkout for an order owned by the authenticated player
+      security: [{bearerAuth: []}]
+      parameters: [{name: order_id, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        '200': {description: Provider checkout information, content: {application/json: {schema: {$ref: '#/components/schemas/GenericSuccess'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '503': {description: No production payment provider is configured}
 components:
   parameters:
     IdentityDeviceHeader:
@@ -2953,6 +3222,14 @@ components:
       scheme: bearer
       bearerFormat: Token
   schemas:
+    GameBookingList:
+      {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/GameBooking'}}}}
+    GameBookingSuccess:
+      {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/GameBooking'}}}
+    GameBooking:
+      {type: object, required: [id, game, team, status, payment_mode, amount, unit_amount, currency, participants], properties: {id: {type: string, format: uuid}, game: {type: object}, team: {type: object}, room: {type: [object, 'null']}, status: {enum: [AWAITING_PAYMENT, PARTIALLY_PAID, PAID, ROOM_CREATED, EXPIRED, CANCELLED, REFUND_PENDING]}, payment_mode: {enum: [FREE, PER_ROOM, PER_PLAYER]}, amount: {type: integer, minimum: 0}, unit_amount: {type: integer, minimum: 0}, currency: {type: string, pattern: '^[A-Z]{3}$'}, participants: {type: array, items: {type: object}}}}
+    PaymentOrderList:
+      {type: object, required: [data], properties: {data: {type: array, items: {type: object, required: [id, booking_id, amount, currency, status], properties: {id: {type: string, format: uuid}, booking_id: {type: string, format: uuid}, amount: {type: integer, minimum: 0}, currency: {type: string}, status: {enum: [PENDING, PROCESSING, PAID, FAILED, EXPIRED, CANCELLED, REFUND_PENDING, REFUNDED]}}}}}}
     ScenarioCreate:
       {"type":"object","additionalProperties":false,"properties":{"organization_id":{"type":"string","format":"uuid"},"title":{"type":"string","maxLength":255},"description":{"type":["string","null"],"maxLength":10000},"theme":{"type":["string","null"],"maxLength":255},"reason":{"type":["string","null"],"maxLength":1000}},"required":["organization_id","title"]}
     ScenarioUpdate:
@@ -3578,6 +3855,72 @@ components:
             - string
             - 'null'
           maxLength: 1000
+    PublicPlayer:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+    TargetedTeamInvitationCreate:
+      type: object
+      additionalProperties: false
+      required: [user_id]
+      properties:
+        user_id: {type: string, format: uuid, description: Public player ID.}
+        expires_at: {type: [string, 'null'], format: date-time}
+    TargetedTeamInvitation:
+      type: object
+      additionalProperties: false
+      required: [id, recipient, decision, expires_at, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        recipient:
+          oneOf:
+            - {$ref: '#/components/schemas/PublicPlayer'}
+            - {type: 'null'}
+        decision: {type: [string, 'null'], enum: [PENDING, ACCEPTED, DECLINED, EXPIRED, null]}
+        responded_at: {type: [string, 'null'], format: date-time}
+        expires_at: {type: [string, 'null'], format: date-time}
+        max_uses: {type: [integer, 'null']}
+        uses_count: {type: integer}
+        revoked_at: {type: [string, 'null'], format: date-time}
+        created_at: {type: string, format: date-time}
+    IncomingTeamInvitation:
+      type: object
+      additionalProperties: false
+      required: [id, team, captain, status, expires_at, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        team:
+          type: object
+          required: [id, name]
+          properties:
+            id: {type: string, format: uuid}
+            name: {type: string}
+        captain: {$ref: '#/components/schemas/PublicPlayer'}
+        status: {type: string, enum: [PENDING, ACCEPTED, DECLINED, EXPIRED, REVOKED]}
+        expires_at: {type: [string, 'null'], format: date-time}
+        created_at: {type: [string, 'null'], format: date-time}
+    TargetedTeamInvitationResponse:
+      type: object
+      required: [data]
+      properties:
+        data: {$ref: '#/components/schemas/TargetedTeamInvitation'}
+    TeamInvitationDecisionResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [id, status, team]
+          properties:
+            id: {type: string, format: uuid}
+            status: {type: string, enum: [ACCEPTED, DECLINED, EXPIRED]}
+            team:
+              oneOf:
+                - {$ref: '#/components/schemas/Team'}
+                - {type: 'null'}
     TeamJoin:
       type: object
       additionalProperties: false
@@ -3586,9 +3929,76 @@ components:
       properties:
         invite_code:
           type: string
-          minLength: 1
-          maxLength: 256
+          minLength: 16
+          maxLength: 64
+          pattern: '^[A-Za-z0-9_-]+$'
           writeOnly: true
+    TeamInvitePreview:
+      type: object
+      additionalProperties: false
+      required: [team, member_count, capacity, expires_at]
+      properties:
+        team:
+          type: object
+          additionalProperties: false
+          required: [name, status, captain]
+          properties:
+            name: {type: string}
+            status: {type: string, enum: [ACTIVE]}
+            captain:
+              type: object
+              additionalProperties: false
+              required: [name]
+              properties:
+                name: {type: string}
+        member_count: {type: integer, minimum: 1, maximum: 8}
+        capacity: {type: integer, const: 8}
+        expires_at: {type: [string, 'null'], format: date-time}
+    TeamInvitePreviewResponse:
+      type: object
+      required: [data]
+      properties:
+        data: {$ref: '#/components/schemas/TeamInvitePreview'}
+    TeamJoinRequest:
+      type: object
+      additionalProperties: false
+      required: [id, status, player, created_at, decided_at]
+      properties:
+        id: {type: string, format: uuid}
+        status: {type: string, enum: [PENDING, ACCEPTED, DECLINED, EXPIRED]}
+        player: {$ref: '#/components/schemas/PublicPlayer'}
+        created_at: {type: [string, 'null'], format: date-time}
+        decided_at: {type: [string, 'null'], format: date-time}
+    TeamJoinRequestResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          additionalProperties: false
+          required: [id, status, team_name]
+          properties:
+            id: {type: string, format: uuid}
+            status: {type: string, enum: [PENDING]}
+            team_name: {type: string}
+    TeamJoinRequestDecisionResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          additionalProperties: false
+          required: [id, status]
+          properties:
+            id: {type: string, format: uuid}
+            status: {type: string, enum: [ACCEPTED, DECLINED]}
+    TeamJoinRequestListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: {$ref: '#/components/schemas/TeamJoinRequest'}
     TeamTransfer:
       type: object
       additionalProperties: false
@@ -3627,6 +4037,16 @@ components:
         id:
           type: string
           format: uuid
+        recipient:
+          oneOf:
+            - {$ref: '#/components/schemas/PublicPlayer'}
+            - {type: 'null'}
+        decision:
+          type: [string, 'null']
+          enum: [PENDING, ACCEPTED, DECLINED, EXPIRED, null]
+        responded_at:
+          type: [string, 'null']
+          format: date-time
         expires_at:
           type:
             - string
@@ -3650,7 +4070,9 @@ components:
           format: date-time
         invite_code:
           type: string
-          description: 'Creation response only. A 256-bit opaque secret; never returned by list.'
+          minLength: 16
+          maxLength: 16
+          description: 'Creation response only. A 16-character cryptographically random opaque secret; never returned by list. Only its SHA-256 hash is persisted.'
     TeamResponse:
       type: object
       required:

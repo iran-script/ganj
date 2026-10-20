@@ -24,10 +24,12 @@ class TeamContractTest extends TestCase
         }
         $routes = collect(Route::getRoutes()->getRoutes());
         $teamRoutes = $routes->filter(fn ($route): bool => str_starts_with($route->uri(), 'api/v1/teams'));
-        $this->assertCount(12, $operations);
+        $this->assertCount(16, $operations);
         $this->assertEqualsCanonicalizing($operations, $teamRoutes->map(fn ($route): string => $route->methods()[0].' '.$route->uri())->values()->all());
         $this->assertArrayHasKey('201', $spec['paths']['/teams']['post']['responses']);
         $this->assertArrayHasKey('201', $spec['paths']['/teams/{team_id}/invites']['post']['responses']);
+        $this->assertSame('#/components/schemas/TeamJoinRequestResponse', $spec['paths']['/teams/join']['post']['responses']['200']['content']['application/json']['schema']['$ref']);
+        $this->assertSame('#/components/schemas/TeamJoinRequestListResponse', $spec['paths']['/teams/{team_id}/join-requests']['get']['responses']['200']['content']['application/json']['schema']['$ref']);
         $this->assertArrayHasKey('204', $spec['paths']['/teams/{team_id}/members/{user_id}']['delete']['responses']);
         $this->assertFalse($spec['components']['schemas']['TeamUpdate']['additionalProperties']);
         $this->assertSame('uuid', $spec['components']['schemas']['Team']['properties']['id']['format']);

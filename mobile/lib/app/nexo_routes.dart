@@ -4,6 +4,8 @@ abstract final class NexoRoutes {
   static const home = '/home';
   static const profile = '/profile';
   static const games = '/games';
+  static const missions = '/missions';
+  static const scan = '/scan';
   static const tutorial = '/tutorial';
   static const notifications = '/notifications';
 

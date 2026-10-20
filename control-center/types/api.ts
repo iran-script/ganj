@@ -34,7 +34,16 @@ export type Game = {
   default_timezone?: string;
   status?: string;
   pricing_type?: string;
-  pricing?: { mode?: 'FREE' | 'PAID'; amount?: number; currency?: string } | null;
+    pricing?: {
+      mode?: 'FREE' | 'PAID' | 'PER_ROOM' | 'PER_PLAYER';
+      amount?: number;
+      currency?: string;
+      booking_available?: boolean;
+      payment_deadline_minutes?: number | null;
+      max_active_reservations?: number | null;
+      refund_policy?: string | null;
+      cancellation_policy?: string | null;
+    } | null;
   scenario_version_id?: string | null;
   scenario?: { id: string; title?: string; status?: string; version_no?: number; version_id?: string } | null;
   city?: string | null;

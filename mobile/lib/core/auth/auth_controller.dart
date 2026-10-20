@@ -161,9 +161,34 @@ class AuthController extends ChangeNotifier {
         responseUser['id'] is! String ||
         device is! Map<String, dynamic> ||
         device['device_uuid'] != deviceUuid) {
-      throw const ApiError(code: 'INVALID_RESPONSE', message: '');
+      if (kDebugMode) {
+        final reason = token is! String || token.isEmpty
+            ? 'missing_token'
+            : responseUser is! Map<String, dynamic>
+                ? 'missing_user'
+                : responseUser['id'] is! String
+                    ? 'invalid_user_id'
+                    : device is! Map<String, dynamic>
+                        ? 'missing_device'
+                        : 'device_uuid_mismatch';
+        debugPrint('NEXO auth response failed schema=$reason');
+      }
+      throw const ApiError(code: 'UNEXPECTED_RESPONSE_SCHEMA', message: '');
     }
-    final typedProfile = UserProfile.fromJson(responseUser);
+    late final UserProfile typedProfile;
+    try {
+      typedProfile = UserProfile.fromJson(responseUser);
+    } on FormatException {
+      if (kDebugMode) {
+        debugPrint('NEXO auth response failed schema=invalid_user_profile');
+      }
+      throw const ApiError(code: 'UNEXPECTED_RESPONSE_SCHEMA', message: '');
+    } on TypeError {
+      if (kDebugMode) {
+        debugPrint('NEXO auth response failed schema=invalid_user_profile');
+      }
+      throw const ApiError(code: 'UNEXPECTED_RESPONSE_SCHEMA', message: '');
+    }
     await api.saveToken(token);
     if (await api.token() != token) {
       throw const ApiError(code: 'AUTH_STORAGE_FAILED', message: '');

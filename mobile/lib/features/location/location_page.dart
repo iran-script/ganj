@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:uuid/uuid.dart';
 
@@ -62,6 +63,7 @@ class _LocationPageState extends State<LocationPage> {
   late final OutboxRepository outbox = widget.outbox ?? OutboxRepository();
   String? message;
   bool loading = false;
+  bool needsSettings = false;
 
   Future<void> locate() async {
     if (loading) return;
@@ -70,9 +72,11 @@ class _LocationPageState extends State<LocationPage> {
     setState(() {
       loading = true;
       message = null;
+      needsSettings = false;
     });
     try {
       if (!await gateway.serviceEnabled()) {
+        if (mounted) setState(() => needsSettings = true);
         throw const ApiError(
             code: 'LOCATION_INVALID', message: 'Location is disabled.');
       }
@@ -82,6 +86,7 @@ class _LocationPageState extends State<LocationPage> {
       }
       if (permission == LocationPermission.denied ||
           permission == LocationPermission.deniedForever) {
+        if (mounted) setState(() => needsSettings = true);
         throw const ApiError(
             code: 'LOCATION_INVALID', message: 'Location permission denied.');
       }
@@ -141,6 +146,7 @@ class _LocationPageState extends State<LocationPage> {
       }
       await widget.onLocation({'acknowledged': true});
       if (mounted) {
+        HapticFeedback.mediumImpact();
         setState(() =>
             message = 'موقعیت ارسال شد؛ نتیجه مأموریت توسط سرور بررسی می‌شود.');
       }
@@ -180,6 +186,20 @@ class _LocationPageState extends State<LocationPage> {
                             if (message != null) ...[
                               const SizedBox(height: 12),
                               Text(message!, textAlign: TextAlign.center)
+                            ],
+                            if (needsSettings) ...[
+                              const SizedBox(height: 12),
+                              OutlinedButton.icon(
+                                onPressed: () async {
+                                  if (!await gateway.serviceEnabled()) {
+                                    await Geolocator.openLocationSettings();
+                                  } else {
+                                    await Geolocator.openAppSettings();
+                                  }
+                                },
+                                icon: const Icon(Icons.settings_outlined),
+                                label: const Text('تنظیم دسترسی موقعیت'),
+                              ),
                             ],
                             const SizedBox(height: 20),
                             FilledButton(

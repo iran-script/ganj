@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:uuid/uuid.dart';
@@ -72,6 +73,7 @@ class _QrScannerPageState extends State<QrScannerPage>
         throw const ApiError(code: 'QR_INVALID', message: '');
       }
       await widget.onValue(token);
+      HapticFeedback.mediumImpact();
       pendingValue = null;
       pendingRequestId = null;
       if (mounted) setState(() => confirmed = true);

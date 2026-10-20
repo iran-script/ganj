@@ -12,6 +12,7 @@ import 'package:nexo_player/core/offline/local_database.dart';
 import 'package:nexo_player/core/offline/offline_identity.dart';
 import 'package:nexo_player/core/storage/secure_store.dart';
 import 'package:nexo_player/features/teams/lobby_page.dart';
+import 'package:nexo_player/features/teams/join_team_page.dart';
 import 'package:nexo_player/features/teams/team_page.dart';
 import 'package:nexo_player/features/teams/team_repository.dart';
 
@@ -92,6 +93,116 @@ Widget host(Widget child) => MaterialApp(
     );
 
 void main() {
+  testWidgets('invite code is previewed before a captain approval request is sent', (tester) async {
+    final code = 'a' * 64;
+    var requestSent = 0;
+    final api = ApiClient(
+      store: _MemoryStore(),
+      client: MockClient((request) async {
+        if (request.url.path == '/api/v1/team-invites/$code') {
+          return response({
+            'team': {'name': 'تیم آذرخش', 'status': 'ACTIVE', 'captain': {'name': 'آرمان'}},
+            'member_count': 3,
+            'capacity': 8,
+            'expires_at': '2026-10-28T00:00:00Z',
+          });
+        }
+        if (request.url.path == '/api/v1/teams/join') {
+          requestSent++;
+          expect(jsonDecode(request.body), {'invite_code': code});
+          expect(request.headers['Idempotency-Key'], isNotEmpty);
+          return response({'id': 'request-id', 'status': 'PENDING', 'team_name': 'تیم آذرخش'});
+        }
+        throw StateError('Unexpected ${request.method} ${request.url.path}');
+      }),
+    );
+    final controller = auth(api);
+    await tester.pumpWidget(host(JoinTeamPage(auth: controller, initialInviteCode: code)));
+    await tester.pumpAndSettle();
+    expect(find.text('تیم آذرخش'), findsOneWidget);
+    expect(find.text('درخواست پیوستن'), findsOneWidget);
+    expect(requestSent, 0);
+    await tester.ensureVisible(find.text('درخواست پیوستن'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('درخواست پیوستن'));
+    await tester.pumpAndSettle();
+    expect(requestSent, 1);
+    expect(extractInviteCode('nexo://invite/$code'), code);
+    expect(extractInviteCode('/invite/$code'), code);
+    expect(extractInviteCode('nexo://invite/not-a-token'), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
+
+  testWidgets('team lobby selects one real team and renders eight player slots',
+      (tester) async {
+    final second = teamJson(members: 3)
+      ..['id'] = 'team-second'
+      ..['name'] = 'بازیکنان دوم';
+    final api = ApiClient(
+      store: _MemoryStore(),
+      client: MockClient((request) async {
+        if (request.url.path == '/api/v1/teams' && request.method == 'GET') {
+          return response([teamJson(members: 2), second]);
+        }
+        if (request.url.path.endsWith('/invites') || request.url.path.endsWith('/join-requests')) return response([]);
+        if (request.url.path == '/api/v1/me/team-invitations') {
+          return response([]);
+        }
+        throw StateError('Unexpected ${request.method} ${request.url.path}');
+      }),
+    );
+    final controller = auth(api);
+
+    await tester.pumpWidget(host(TeamPage(auth: controller)));
+    await tester.pumpAndSettle();
+    expect(find.byType(DropdownButtonFormField<NexoTeam>), findsOneWidget);
+    expect(find.text('دعوت به تیم'), findsOneWidget);
+    await tester.tap(find.byType(DropdownButtonFormField<NexoTeam>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('بازیکنان دوم').last);
+    await tester.pumpAndSettle();
+    expect(find.text('بازیکنان دوم'), findsWidgets);
+    for (var attempt = 0;
+        attempt < 6 && find.text('ترکیب تیم').evaluate().isEmpty;
+        attempt++) {
+      await tester.drag(find.byType(ListView), const Offset(0, -320));
+      await tester.pumpAndSettle();
+    }
+    await tester.ensureVisible(find.text('ترکیب تیم'));
+    await tester.pumpAndSettle();
+    expect(find.text('جای خالی'), findsNWidgets(5));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
+
+  testWidgets('user without a team can open received invitations from lobby',
+      (tester) async {
+    final api = ApiClient(
+      store: _MemoryStore(),
+      client: MockClient((request) async {
+        if (request.url.path == '/api/v1/teams') return response([]);
+        if (request.url.path == '/api/v1/me/team-invitations') {
+          return response([]);
+        }
+        throw StateError('Unexpected ${request.method} ${request.url.path}');
+      }),
+    );
+    final controller = auth(api);
+    await tester.pumpWidget(host(TeamPage(auth: controller)));
+    await tester.pumpAndSettle();
+
+    expect(find.text('ساخت تیم'), findsOneWidget);
+    await tester.tap(find.byTooltip('دعوت‌های دریافتی'));
+    await tester.pumpAndSettle();
+    expect(find.text('دعوت‌های تیم'), findsOneWidget);
+    expect(find.text('دعوت تازه‌ای نداری'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
+
   testWidgets(
       'team creation widget posts the contract and refreshes membership',
       (tester) async {
@@ -105,6 +216,13 @@ void main() {
       client: MockClient((request) async {
         if (request.url.path.endsWith('/teams') && request.method == 'GET') {
           return response(createCalls == 0 ? [] : [teamJson()]);
+        }
+        if (request.url.path.endsWith('/teams/$teamId/invites') || request.url.path.endsWith('/teams/$teamId/join-requests')) {
+          return response([]);
+        }
+        if (request.url.path.endsWith('/teams/$teamId/invites') &&
+            request.method == 'GET') {
+          return response([]);
         }
         if (request.url.path.endsWith('/teams') && request.method == 'POST') {
           createCalls++;
@@ -124,14 +242,14 @@ void main() {
     await tester.tap(find.text('ادامه'));
     await tester.pumpAndSettle();
     expect(createCalls, 1);
-    expect(find.text('کاوشگران'), findsOneWidget);
+    expect(find.text('کاوشگران'), findsWidgets);
     expect(find.textContaining('کاپیتان:'), findsOneWidget);
     expect(find.text('۴ از ۸ عضو'), findsOneWidget);
     expect(find.text('آماده ثبت‌نام در بازی'), findsOneWidget);
     await tester.drag(find.byType(ListView), const Offset(0, -1200));
     await tester.pumpAndSettle();
-    expect(find.text('عضو تیم'), findsWidgets);
-    expect(find.text('دریافت کد دعوت'), findsOneWidget);
+    expect(find.text('اعضای تیم'), findsNothing);
+    expect(find.text('ترکیب تیم'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     controller.dispose();
@@ -145,7 +263,8 @@ void main() {
         paths.add(request.url.path);
         if (request.url.path.endsWith('/teams/join')) {
           expect(jsonDecode(request.body), {'invite_code': 'one-time-code'});
-          return response(teamJson());
+          expect(request.headers['Idempotency-Key'], isNotEmpty);
+          return response({'id': 'join-request-id', 'status': 'PENDING', 'team_name': 'کاوشگران'});
         }
         expect(request.url.path, '/api/v1/teams/$teamId/invites');
         expect(request.method, 'POST');
@@ -154,7 +273,7 @@ void main() {
       }),
     ));
 
-    expect((await repository.join(' one-time-code ')).id, teamId);
+    expect((await repository.join(' one-time-code ')).id, 'join-request-id');
     expect((await repository.createInvite(teamId))['invite_code'],
         'secret-returned-once');
     expect(paths, ['/api/v1/teams/join', '/api/v1/teams/$teamId/invites']);
@@ -170,6 +289,10 @@ void main() {
         if (request.url.path.endsWith('/teams') && request.method == 'GET') {
           return response(leaveCalls == 0 ? [teamJson()] : []);
         }
+        if (request.url.path.endsWith('/teams/$teamId/invites') &&
+            request.method == 'GET') {
+          return response([]);
+        }
         if (request.url.path.endsWith('/teams/$teamId/leave')) {
           leaveCalls++;
           return http.Response('', 204);
@@ -181,7 +304,7 @@ void main() {
     await tester.pumpWidget(host(TeamPage(auth: controller)));
     await tester.pumpAndSettle();
 
-    await tester.drag(find.byType(ListView), const Offset(0, -1200));
+    await tester.tap(find.byTooltip('عملیات تیم'));
     await tester.pumpAndSettle();
     expect(find.text('خروج از تیم'), findsOneWidget);
     expect(find.text('دریافت کد دعوت'), findsNothing);
@@ -193,6 +316,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(leaveCalls, 0);
 
+    await tester.tap(find.byTooltip('عملیات تیم'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('خروج از تیم'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'خروج از تیم'));
@@ -324,6 +449,9 @@ void main() {
     await tester.tap(find.text('ثبت‌نام کاوشگران در نشست'));
     await tester.pumpAndSettle();
     expect(registrationKeys, hasLength(1));
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('ثبت‌نام کاوشگران در نشست'));
     await tester.tap(find.text('ثبت‌نام کاوشگران در نشست'));
     await tester.pumpAndSettle();
     expect(registrationKeys, hasLength(2));

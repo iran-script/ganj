@@ -45,6 +45,7 @@ class GameRoomService
             $actor = User::query()->whereKey($actor->id)->lockForUpdate()->firstOrFail();
             $actor->ensureActive();
             $game = $this->resolveGame($actor, $gameId, true);
+            $this->ensureBookingDoesNotRequireCheckout($game);
             $team = $this->resolveCaptainTeam($actor, $input['team_id']);
             Gate::forUser($actor)->authorize('create', [GameRoom::class, $game, $team]);
             $this->ensureEligible($team, $game);
@@ -69,6 +70,7 @@ class GameRoomService
             $actor->ensureActive();
             $room = $this->resolveRoom($actor, $roomId);
             $this->resolveGame($actor, $room->game->public_id, true);
+            $this->ensureBookingDoesNotRequireCheckout($room->game);
             $room = GameRoom::query()->whereKey($room->id)->lockForUpdate()->firstOrFail()
                 ->load(['game.organization', 'teams.team.captain', 'teams.team.activeMembers.user']);
             $team = $this->resolveCaptainTeam($actor, $input['team_id']);
@@ -112,6 +114,13 @@ class GameRoomService
         if ($team->status !== 'ACTIVE' || ($team->organization_id !== null && $team->organization_id !== $game->organization_id)
             || $team->activeMembers()->count() < 4 || $team->activeMembers()->count() > 8) {
             throw new ApiException('TEAM_NOT_ELIGIBLE', 'Team does not meet the game room requirements.', [], 409);
+        }
+    }
+
+    private function ensureBookingDoesNotRequireCheckout(Game $game): void
+    {
+        if (is_array($game->pricing) && $game->pricing !== []) {
+            throw new ApiException('BOOKING_REQUIRED', 'Create a booking before creating or joining a room.', [], 409);
         }
     }
 

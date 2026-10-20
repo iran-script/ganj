@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:nexo_player/core/api/api_client.dart';
 import 'package:nexo_player/core/auth/auth_controller.dart';
+import 'package:nexo_player/core/errors/api_error.dart';
 import 'package:nexo_player/core/storage/secure_store.dart';
 import 'package:nexo_player/features/rooms/room_pages.dart';
 import 'package:nexo_player/features/rooms/room_repository.dart';
@@ -273,6 +274,69 @@ void main() {
     expect(rooms.single.sessionStatus, 'REGISTRATION');
     expect(rooms.single.teamCount, 5);
     expect(rooms.single.city, 'Tehran');
+  });
+
+  test('empty room response is empty state data and sends bearer auth only',
+      () async {
+    final store = _MemoryStore()
+      ..values['nexo.access_token'] = 'test-player-token';
+    final api = ApiClient(
+      store: store,
+      client: MockClient((request) async {
+        expect(request.method, 'GET');
+        expect(request.url.path,
+            '/api/v1/games/77b30ca7-b55e-40c2-a0a7-21e078b80d4f/rooms');
+        expect(request.headers['Authorization'], 'Bearer test-player-token');
+        expect(request.headers.containsKey('X-Device-Id'), isFalse);
+        return _json([]);
+      }),
+    );
+
+    expect(
+      await RoomRepository(api).list('77b30ca7-b55e-40c2-a0a7-21e078b80d4f'),
+      isEmpty,
+    );
+  });
+
+  test('room repository rejects a non-list data shape instead of showing empty',
+      () async {
+    final api = ApiClient(
+      store: _MemoryStore(),
+      client: MockClient((_) async => _json({'rooms': const []})),
+    );
+
+    await expectLater(
+      RoomRepository(api).list('77b30ca7-b55e-40c2-a0a7-21e078b80d4f'),
+      throwsA(isA<ApiError>()),
+    );
+  });
+
+  testWidgets('empty room list renders an empty state instead of a failure',
+      (tester) async {
+    final api = ApiClient(
+      store: _MemoryStore(),
+      client: MockClient((request) async {
+        if (request.url.path.endsWith('/rooms')) return _json([]);
+        if (request.url.path.endsWith('/teams')) return _json([]);
+        throw StateError('Unexpected request path: ${request.url.path}');
+      }),
+    );
+    final auth = AuthController(api)..user = {'id': 'captain-public-id'};
+
+    await tester.pumpWidget(MaterialApp(
+      home: RoomListPage(
+        auth: auth,
+        game: {
+          'id': '77b30ca7-b55e-40c2-a0a7-21e078b80d4f',
+          'name': 'City game',
+        },
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.byIcon(Icons.meeting_room_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.error_outline), findsNothing);
+    auth.dispose();
   });
 
   test('room mutations send the requested payload and stable idempotency key',

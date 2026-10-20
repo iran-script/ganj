@@ -17,16 +17,32 @@ class ProductionSessionDependencies implements BillingGate, CancellationResoluti
     public function validatePricing(?array $pricing): array
     {
         $validator = Validator::make(['pricing' => $pricing], [
-            'pricing' => 'required|array:mode,amount,currency',
-            'pricing.mode' => 'required|in:FREE,PAID',
+            'pricing' => 'required|array:mode,amount,currency,booking_available,payment_deadline_minutes,refund_policy,cancellation_policy,max_active_reservations,effective_at',
+            'pricing.mode' => 'required|in:FREE,PAID,PER_ROOM,PER_PLAYER',
             'pricing.amount' => 'required|integer|min:0|max:999999999999',
             'pricing.currency' => 'required|string|regex:/^[A-Z]{3}$/',
+            'pricing.booking_available' => 'sometimes|boolean',
+            'pricing.payment_deadline_minutes' => 'sometimes|nullable|integer|min:1|max:10080',
+            'pricing.refund_policy' => 'sometimes|nullable|string|max:4000',
+            'pricing.cancellation_policy' => 'sometimes|nullable|string|max:4000',
+            'pricing.max_active_reservations' => 'sometimes|nullable|integer|min:1|max:100000',
+            'pricing.effective_at' => 'sometimes|nullable|date',
         ]);
         if ($validator->fails() || ($pricing['mode'] === 'FREE' ? (int) $pricing['amount'] !== 0 : (int) $pricing['amount'] <= 0)) {
             throw new ApiException('SESSION_BILLING_NOT_READY', 'Explicit valid game pricing is required.', [], 409);
         }
 
-        return ['mode' => $pricing['mode'], 'amount' => (int) $pricing['amount'], 'currency' => $pricing['currency']];
+        return [
+            'mode' => $pricing['mode'],
+            'amount' => (int) $pricing['amount'],
+            'currency' => $pricing['currency'],
+            'booking_available' => (bool) ($pricing['booking_available'] ?? true),
+            'payment_deadline_minutes' => isset($pricing['payment_deadline_minutes']) ? (int) $pricing['payment_deadline_minutes'] : null,
+            'refund_policy' => $pricing['refund_policy'] ?? null,
+            'cancellation_policy' => $pricing['cancellation_policy'] ?? null,
+            'max_active_reservations' => isset($pricing['max_active_reservations']) ? (int) $pricing['max_active_reservations'] : null,
+            'effective_at' => $pricing['effective_at'] ?? null,
+        ];
     }
 
     public function publishedVersion(int $versionId, int $organizationId): ScenarioVersion
