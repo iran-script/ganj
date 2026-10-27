@@ -35,8 +35,8 @@ class CheckpointServiceTest extends TestCase
         $this->getJson('/api/v1/checkpoints/'.$checkpoint->public_id)->assertNotFound();
         $this->patchJson('/api/v1/checkpoints/'.$checkpoint->public_id, ['status' => 'INACTIVE'])->assertNotFound();
         $this->scenarioAuth(User::factory()->create());
-        $this->getJson('/api/v1/checkpoints/'.$checkpoint->public_id)->assertNotFound();
-        $this->getJson('/api/v1/checkpoints')->assertOk()->assertJsonCount(0, 'data');
+        $this->getJson('/api/v1/checkpoints/'.$checkpoint->public_id)->assertForbidden();
+        $this->getJson('/api/v1/checkpoints')->assertForbidden();
     }
 
     public function test_invalid_polygon_is_rejected_without_partial_write(): void

@@ -35,9 +35,9 @@ trait ScenarioFixtures
 
     protected function scenarioAuth(User $user): void
     {
-        $device = UserDevice::factory()->create(['user_id' => $user->id]);
+        $device = UserDevice::factory()->create(['user_id' => $user->id, 'platform' => 'web']);
         $token = Str::random(64);
-        $access = $user->tokens()->make(['name' => 'scenario-test', 'token' => hash('sha256', $token), 'abilities' => ['*']]);
+        $access = $user->tokens()->make(['name' => 'scenario-test', 'token' => hash('sha256', $token), 'abilities' => ['control-center']]);
         $access->forceFill(['user_device_id' => $device->id])->save();
         $this->withToken($token)->withHeader('X-Device-Id', $device->device_uuid);
     }

@@ -36,8 +36,8 @@ class QrTriggerManagementTest extends TestCase
         $this->getJson('/api/v1/qr/triggers/'.$trigger->public_id)->assertOk()->assertJsonPath('data.status', 'INACTIVE');
 
         $this->scenarioAuth(User::factory()->create());
-        $this->getJson('/api/v1/qr/triggers')->assertOk()->assertJsonCount(0, 'data');
-        $this->getJson('/api/v1/qr/triggers/'.$trigger->public_id)->assertNotFound();
-        $this->postJson('/api/v1/qr/triggers/'.$trigger->public_id.'/activate')->assertNotFound();
+        $this->getJson('/api/v1/qr/triggers')->assertForbidden();
+        $this->getJson('/api/v1/qr/triggers/'.$trigger->public_id)->assertForbidden();
+        $this->postJson('/api/v1/qr/triggers/'.$trigger->public_id.'/activate')->assertForbidden();
     }
 }

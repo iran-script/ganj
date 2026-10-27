@@ -227,6 +227,7 @@ void main() {
         expect(request.headers['Idempotency-Key'], isNotEmpty);
         return _json({
           'id': 'team-public-id',
+          'team_name': 'تیم مقصد',
           'name': 'تیم مقصد',
           'status': 'ACTIVE',
           'captain_user_id': 'captain-public-id',
@@ -251,7 +252,7 @@ void main() {
     await tester.tap(find.text('عضویت').last);
     await tester.pumpAndSettle();
 
-    expect(find.text('به تیم «تیم مقصد» پیوستید.'), findsOneWidget);
+    expect(find.text('درخواست پیوستن به تیم «تیم مقصد» برای تأیید کاپیتان ارسال شد.'), findsOneWidget);
     auth.dispose();
   });
 

@@ -3,22 +3,14 @@ import 'package:flutter/foundation.dart';
 class AppConfig {
   const AppConfig._();
 
-  static const developmentTestApiBaseUrl = 'http://2.188.205.35:18100/api/v1';
-  static const testApiHost = '2.188.205.35';
-  static const testApiPort = 18100;
-  static const testHttpEnabled = bool.fromEnvironment(
-    'ALLOW_TEST_HTTP',
-    defaultValue: false,
-  );
   static const apiBuildVariant = String.fromEnvironment(
     'API_BUILD_VARIANT',
-    defaultValue: kDebugMode ? 'test' : 'production',
+    defaultValue: kDebugMode ? 'development' : 'production',
   );
 
   static const apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue:
-        kDebugMode ? developmentTestApiBaseUrl : 'http://10.0.2.2:8000/api/v1',
+    defaultValue: '',
   );
 
   /// Public OSM tiles are for prototype use; production should configure a
@@ -48,6 +40,10 @@ class AppConfig {
   }
 
   static bool isAllowedApiBaseUrl(String value) {
+    return isAllowedApiBaseUrlForVariant(value, apiBuildVariant);
+  }
+
+  static bool isAllowedApiBaseUrlForVariant(String value, String variant) {
     final uri = Uri.tryParse(value);
     if (uri == null ||
         uri.host.isEmpty ||
@@ -57,12 +53,10 @@ class AppConfig {
       return false;
     }
     if (uri.scheme == 'https') return true;
-    return (kDebugMode || testHttpEnabled) &&
+    return variant == 'development' &&
         uri.scheme == 'http' &&
-        (const {'10.0.2.2', '127.0.0.1', 'localhost'}.contains(uri.host) ||
-            (apiBuildVariant == 'test' &&
-                uri.host == testApiHost &&
-                uri.port == testApiPort &&
-                uri.path == '/api/v1'));
+        (uri.host == 'localhost' || uri.host == '127.0.0.1') &&
+        uri.port == 8000 &&
+        uri.path == '/api/v1';
   }
 }

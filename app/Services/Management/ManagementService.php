@@ -17,6 +17,7 @@ use App\Services\Organizations\OrganizationScope;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Pagination\CursorPaginator;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Hash;
@@ -327,7 +328,7 @@ class ManagementService
         $isSuper = in_array(RoleAssignment::SUPER_ADMIN, $global, true);
         $capabilities = [];
         if ($isSuper) {
-            $capabilities = ['admin.users.view', 'admin.users.manage', 'admin.users.status', 'admin.admins.manage', 'admin.players.view', 'admin.roles.view'];
+            $capabilities = ['admin.users.view', 'admin.users.manage', 'admin.users.status', 'admin.admins.manage', 'admin.players.view', 'admin.roles.view', 'admin.audit.view'];
         } else {
             foreach ($memberships as $membership) {
                 if ($membership->role === OrganizationRole::OrganizationAdmin->value) {
@@ -375,6 +376,38 @@ class ManagementService
                 'reason' => $event->reason, 'occurred_at' => $event->occurred_at,
             ])->all(),
         ];
+    }
+
+    public function auditEvents(User $actor, array $input): LengthAwarePaginator
+    {
+        Gate::forUser($actor)->authorize('admin.audit.view');
+
+        $query = DB::table('audit_events')
+            ->leftJoin('users as actors', 'actors.id', '=', 'audit_events.actor_id')
+            ->leftJoin('organizations', 'organizations.id', '=', 'audit_events.organization_id')
+            ->select([
+                'audit_events.actor_type', 'actors.public_id as actor_id', 'audit_events.action',
+                'audit_events.resource_type', 'audit_events.resource_id',
+                'organizations.public_id as organization_id', 'audit_events.occurred_at',
+            ]);
+
+        if (! empty($input['q'])) {
+            $term = '%'.mb_strtolower($input['q']).'%';
+            $query->where(function ($events) use ($term): void {
+                $events->whereRaw('LOWER(audit_events.action) LIKE ?', [$term])
+                    ->orWhereRaw('LOWER(audit_events.resource_type) LIKE ?', [$term])
+                    ->orWhereRaw('LOWER(audit_events.resource_id) LIKE ?', [$term]);
+            });
+        }
+        $query->when($input['action'] ?? null, fn ($events, string $action) => $events->where('audit_events.action', $action));
+        $query->when($input['resource_type'] ?? null, fn ($events, string $type) => $events->where('audit_events.resource_type', $type));
+        $query->when($input['actor_id'] ?? null, fn ($events, string $id) => $events->where('actors.public_id', $id));
+        $query->when($input['organization_id'] ?? null, fn ($events, string $id) => $events->where('organizations.public_id', $id));
+        $query->when($input['from'] ?? null, fn ($events, string $date) => $events->whereDate('audit_events.occurred_at', '>=', $date));
+        $query->when($input['to'] ?? null, fn ($events, string $date) => $events->whereDate('audit_events.occurred_at', '<=', $date));
+        $query->orderByDesc('audit_events.occurred_at')->orderByDesc('audit_events.id');
+
+        return $query->paginate($input['limit'] ?? 25, ['*'], 'page', $input['page'] ?? 1);
     }
 
     private function scopePlayers(User $actor, Builder $query): void

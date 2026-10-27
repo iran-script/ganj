@@ -80,6 +80,15 @@ class AdminManagementController extends Controller
         return response()->json(['data' => $this->management->roleOverview($request->user())])->header('Cache-Control', 'no-store');
     }
 
+    public function auditEvents(AdminManagementRequest $request): JsonResponse
+    {
+        $page = $this->management->auditEvents($request->user(), $request->validated());
+
+        return response()->json(['data' => $page->items(), 'meta' => ['pagination' => [
+            'page' => $page->currentPage(), 'per_page' => $page->perPage(), 'total' => $page->total(), 'last_page' => $page->lastPage(),
+        ]]])->header('Cache-Control', 'no-store');
+    }
+
     public function capabilities(AdminManagementRequest $request): JsonResponse
     {
         return response()->json(['data' => $this->management->capabilities($request->user())])->header('Cache-Control', 'no-store');

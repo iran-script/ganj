@@ -1,4 +1,4 @@
-import { api, getApiBaseUrl, getStoredToken } from '@/lib/api-client';
+import { api } from '@/lib/api-client';
 import { ApiErrorResponse, normalizeApiError } from '@/lib/api-error';
 import { z } from 'zod';
 
@@ -34,7 +34,7 @@ export const contentApi = {
   review: (id: string, status: string, message: string) => api.post<SubmissionItem>(`/submissions/${id}/review`, { status, message }),
 };
 export async function fetchContentBlob(path: string): Promise<Blob> {
-  const response = await fetch(`${getApiBaseUrl()}${path}`, { headers: { Authorization: `Bearer ${getStoredToken() ?? ''}` } });
+  const response = await fetch(`/api/backend${path}`, { credentials: 'same-origin' });
   if (!response.ok) throw new Error('دریافت فایل انجام نشد.');
   return response.blob();
 }

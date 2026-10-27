@@ -1,0 +1,107 @@
+name: nexo-release
+
+x-release-service: &release-service
+  restart: unless-stopped
+  networks: [nexo]
+  logging:
+    driver: json-file
+    options:
+      max-size: "5m"
+      max-file: "3"
+
+services:
+  app:
+    <<: *release-service
+    image: ${NEXO_APP_IMAGE:?Set immutable Backend image reference}
+    labels:
+      org.opencontainers.image.revision: ${NEXO_RELEASE_ID:?Set immutable release ID}
+    build:
+      context: .
+      target: production
+    env_file:
+      - ${NEXO_APP_ENV_FILE:?Set path to protected Laravel runtime env file}
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_URL: https://${NEXO_DOMAIN:?Set verified production domain}
+      DB_CONNECTION: pgsql
+      DB_HOST: nexo-postgres
+      DB_PORT: "5432"
+      DB_DATABASE: ${NEXO_DB_DATABASE:?Set verified production database name}
+      REDIS_HOST: nexo-redis
+      REDIS_PORT: "6379"
+    volumes:
+      - app_storage:/var/www/html/storage
+    networks:
+      nexo:
+        aliases: [nexo-release-app]
+    mem_limit: 192m
+    memswap_limit: 192m
+    healthcheck:
+      test: [CMD, php, -r, "exit(@fsockopen('127.0.0.1', 9000) ? 0 : 1);"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  control:
+    <<: *release-service
+    image: ${NEXO_CONTROL_IMAGE:?Set immutable Control Center image reference}
+    labels:
+      org.opencontainers.image.revision: ${NEXO_RELEASE_ID:?Set immutable release ID}
+    build:
+      context: .
+      target: production-control
+    env_file:
+      - ${NEXO_CONTROL_ENV_FILE:?Set path to protected Control Center env file}
+    environment:
+      NODE_ENV: production
+      CONTROL_CENTER_BACKEND_API_URL: http://nexo-release-app/api/v1
+      CONTROL_CENTER_ALLOWED_ORIGINS: https://${NEXO_DOMAIN:?Set verified production domain}
+    networks:
+      nexo:
+        aliases: [nexo-release-control]
+    mem_limit: 256m
+    memswap_limit: 256m
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/login').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  edge:
+    <<: *release-service
+    image: ${NEXO_NGINX_IMAGE:?Set immutable Nginx image reference}
+    labels:
+      org.opencontainers.image.revision: ${NEXO_RELEASE_ID:?Set immutable release ID}
+    build:
+      context: .
+      target: production-nginx-release
+    environment:
+      NEXO_DOMAIN: ${NEXO_DOMAIN:?Set verified production domain}
+    ports:
+      - "${NEXO_HTTP_BIND_IP:-0.0.0.0}:80:80"
+      - "${NEXO_HTTPS_BIND_IP:-0.0.0.0}:443:443"
+    volumes:
+      - ${NEXO_TLS_DIR:?Set mounted directory containing valid fullchain.pem and privkey.pem}:/run/nexo-tls:ro
+    depends_on:
+      app: { condition: service_healthy }
+      control: { condition: service_healthy }
+    mem_limit: 32m
+    memswap_limit: 32m
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, "https://127.0.0.1/api/v1/ready", --no-check-certificate]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+networks:
+  nexo:
+    external: true
+    name: ${NEXO_DOCKER_NETWORK:?Set audited existing application network}
+
+volumes:
+  app_storage:
+    external: true
+    name: ${NEXO_APP_STORAGE_VOLUME:?Set audited existing application storage volume}

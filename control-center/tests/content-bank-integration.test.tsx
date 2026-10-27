@@ -3,7 +3,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ContentBank } from '@/components/content-bank';
 import { contentApi } from '@/lib/content-api';
-import { storeToken } from '@/lib/api-client';
 import { queries } from '@/lib/queries';
 import { snapshotLocation } from '@/lib/location-state';
 
@@ -11,7 +10,7 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 const qr = { id: 'qr', organization_id: 'authorized-org', name: 'Square QR', status: 'ACTIVE', label: 'SQ', location_description: '', notes: '', usage_count: 0 };
 const location = { id: 'point', organization_id: 'authorized-org', name: 'Square', status: 'ACTIVE', latitude: 35.6, longitude: 51.4, default_radius_m: 20, accuracy_m: null, dwell_seconds: null, category: '', description: '' };
 const fetchMock = vi.fn();
-beforeEach(() => { vi.stubGlobal('fetch', fetchMock); vi.stubEnv('NEXT_PUBLIC_API_BASE_URL', 'http://localhost:18000/api/v1'); vi.spyOn(window.localStorage, 'getItem').mockReturnValue('test-only-token'); storeToken('test-only-token'); });
+beforeEach(() => { vi.stubGlobal('fetch', fetchMock); vi.stubEnv('CONTROL_CENTER_BACKEND_API_URL', 'http://localhost:18000/api/v1'); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); fetchMock.mockReset(); });
 
 it.each([['qr-bank', qr], ['locations', location]] as const)('renders canonical %s data using authenticated organization scope', async (bank, item) => {
@@ -19,8 +18,9 @@ it.each([['qr-bank', qr], ['locations', location]] as const)('renders canonical 
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ContentBank bank={bank} /></QueryClientProvider>);
   expect(await screen.findByRole('heading', { name: item.name })).toBeInTheDocument();
   const [url, init] = fetchMock.mock.calls[0];
-  expect(url).toBe(`http://localhost:18000/api/v1/content/${bank}`);
-  expect(init.headers.get('Authorization')).toBe('Bearer test-only-token');
+  expect(url).toBe(`/api/backend/content/${bank}`);
+  expect(init.credentials).toBe('same-origin');
+  expect(init.headers.get('Authorization')).toBeNull();
   expect(init.headers.get('Accept')).toBe('application/json');
   // These endpoints derive all permitted organizations from the authenticated actor.
   expect(url).not.toContain('organization_id');

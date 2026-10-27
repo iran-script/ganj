@@ -22,7 +22,6 @@ CMD ["php-fpm", "-F"]
 FROM node:22-alpine AS control-build
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV NEXT_PUBLIC_API_BASE_URL=/api/v1
 ENV NODE_OPTIONS=--max-old-space-size=512
 COPY control-center/package.json control-center/package-lock.json ./
 RUN npm ci --no-audit --no-fund
@@ -43,6 +42,14 @@ CMD ["node", "server.js"]
 FROM nginx:1.27-alpine AS production-nginx
 COPY public /var/www/html/public
 COPY docker/nginx-production.conf /etc/nginx/conf.d/default.conf
+
+FROM nginx:1.27-alpine AS production-nginx-release
+ENV NGINX_ENVSUBST_FILTER=^NEXO_DOMAIN$
+COPY docker/nginx-release.conf.template /etc/nginx/templates/default.conf.template
+
+FROM nginx:1.27-alpine AS production-nginx-rollback
+ENV NGINX_ENVSUBST_FILTER=^NEXO_DOMAIN$
+COPY docker/nginx-rollback.conf.template /etc/nginx/templates/default.conf.template
 
 FROM php:8.4-cli AS development
 RUN printf 'upload_max_filesize=25M\npost_max_size=26M\n' > /usr/local/etc/php/conf.d/nexo-uploads.ini

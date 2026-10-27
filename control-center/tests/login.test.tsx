@@ -6,7 +6,6 @@ import LoginPage from '@/app/login/page';
 
 const replace = vi.fn();
 vi.mock('next/navigation', () => ({ useRouter: () => ({ replace }) }));
-vi.mock('@/lib/api-client', () => ({ api: { post: vi.fn().mockResolvedValue({ token: 'token' }) }, storeToken: vi.fn() }));
 
 describe('login form', () => {
   beforeEach(() => replace.mockReset());

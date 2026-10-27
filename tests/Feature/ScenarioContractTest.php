@@ -14,7 +14,7 @@ class ScenarioContractTest extends TestCase
         $spec = Yaml::parseFile(base_path('docs/specs/03_openapi.yaml'));
         $all = collect(Route::getRoutes()->getRoutes());
         $routes = $all->filter(fn ($route): bool => str_starts_with($route->uri(), 'api/v1/scenarios') || str_starts_with($route->uri(), 'api/v1/scenario-versions'));
-        $this->assertCount(15, $routes);
+        $this->assertCount(16, $routes);
         foreach ($routes as $route) {
             $path = substr($route->uri(), 6);
             $method = strtolower($route->methods()[0]);

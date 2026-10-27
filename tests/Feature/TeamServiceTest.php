@@ -65,7 +65,7 @@ class TeamServiceTest extends TestCase
         return [
             'expired' => ['expired', 'INVITE_EXPIRED'],
             'revoked' => ['revoked', 'INVITE_REVOKED'],
-            'exhausted' => ['exhausted', 'ACTION_NOT_ALLOWED'],
+            'exhausted' => ['exhausted', 'INVITE_EXHAUSTED'],
             'unknown' => ['unknown', 'RESOURCE_NOT_FOUND'],
         ];
     }

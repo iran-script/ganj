@@ -21,8 +21,8 @@ class TeamConcurrencyTest extends TestCase
 
     public static function races(): array
     {
-        return [['capacity', 'TEAM_FULL'], ['last invite use', 'ACTION_NOT_ALLOWED'],
-            ['duplicate join', 'ALREADY_TEAM_MEMBER'], ['transfer vs leave', 'ACTION_NOT_ALLOWED'],
+        return [['capacity', 'TEAM_FULL'], ['last invite use', 'INVITE_EXHAUSTED'],
+            ['duplicate join', 'JOIN_REQUEST_REPLAY'], ['transfer vs leave', 'ACTION_NOT_ALLOWED'],
             ['transfer vs remove', 'AUTHORIZATION_DENIED'], ['revoke vs join', 'INVITE_REVOKED'],
             ['transfer vs transfer', 'AUTHORIZATION_DENIED']];
     }
@@ -54,6 +54,15 @@ class TeamConcurrencyTest extends TestCase
             'transfer vs transfer' => [$captain, 'transfer', ['user_id' => $secondJoiner->public_id], $team->public_id],
             default => [$secondJoiner, 'join', ['invite_code' => 'race-code']],
         };
+        $firstOperation = fn (): ?array => app(TeamService::class)->execute(...$first);
+        $secondOperation = fn (): ?array => app(TeamService::class)->execute(...$second);
+        if (in_array($race, ['capacity', 'last invite use'], true)) {
+            $service = app(TeamService::class);
+            $firstRequest = $service->requestTeamJoin($firstJoiner, 'race-code');
+            $secondRequest = $service->requestTeamJoin($secondJoiner, 'race-code');
+            $firstOperation = fn (): array => $service->decideJoinRequest($captain, $team->public_id, $firstRequest['id'], true);
+            $secondOperation = fn (): array => $service->decideJoinRequest($captain, $team->public_id, $secondRequest['id'], true);
+        }
         $default = DB::getDefaultConnection();
         config(['database.connections.team_lock_probe' => config('database.connections.'.$default)]);
         $primary = DB::connection($default);
@@ -61,10 +70,10 @@ class TeamConcurrencyTest extends TestCase
         $probe->statement("SET lock_timeout = '200ms'");
         $primary->beginTransaction();
         try {
-            app(TeamService::class)->execute(...$first);
+            $firstResult = $firstOperation();
             DB::setDefaultConnection('team_lock_probe');
             try {
-                app(TeamService::class)->execute(...$second);
+                $secondOperation();
                 $this->fail('The second connection bypassed the transaction boundary.');
             } catch (QueryException $exception) {
                 $this->assertSame('55P03', $exception->errorInfo[0]);
@@ -72,13 +81,19 @@ class TeamConcurrencyTest extends TestCase
             DB::setDefaultConnection($default);
             $primary->commit();
             DB::setDefaultConnection('team_lock_probe');
-            try {
-                app(TeamService::class)->execute(...$second);
-                $this->fail('The losing operation did not recheck the committed state.');
-            } catch (ApiException $exception) {
-                $this->assertSame($expected, $exception->errorCode);
-            } catch (AuthorizationException) {
-                $this->assertSame('AUTHORIZATION_DENIED', $expected);
+            if ($race === 'duplicate join') {
+                $secondResult = $secondOperation();
+                $this->assertSame('JOIN_REQUEST_REPLAY', $expected);
+                $this->assertSame($firstResult['id'], $secondResult['id']);
+            } else {
+                try {
+                    $secondOperation();
+                    $this->fail('The losing operation did not recheck the committed state.');
+                } catch (ApiException $exception) {
+                    $this->assertSame($expected, $exception->errorCode);
+                } catch (AuthorizationException) {
+                    $this->assertSame('AUTHORIZATION_DENIED', $expected);
+                }
             }
         } finally {
             DB::setDefaultConnection($default);
@@ -90,8 +105,15 @@ class TeamConcurrencyTest extends TestCase
         $current = $team->fresh();
         $this->assertLessThanOrEqual(8, $current->activeMembers()->count());
         $this->assertSame(1, $current->activeMembers()->where('user_id', $current->captain_user_id)->count());
-        $this->assertSame(str_starts_with($race, 'transfer') || $race === 'revoke vs join' ? 0 : 1, $invite->fresh()->uses_count);
-        $this->assertDatabaseCount('outbox_events', 1);
-        $this->assertDatabaseCount('audit_events', 1);
+        if ($race === 'duplicate join') {
+            $this->assertSame(0, $invite->fresh()->uses_count);
+            $this->assertDatabaseCount('team_join_requests', 1);
+            $this->assertDatabaseCount('outbox_events', 0);
+            $this->assertDatabaseCount('audit_events', 0);
+        } else {
+            $this->assertSame(str_starts_with($race, 'transfer') || $race === 'revoke vs join' ? 0 : 1, $invite->fresh()->uses_count);
+            $this->assertDatabaseCount('outbox_events', 1);
+            $this->assertDatabaseCount('audit_events', 1);
+        }
     }
 }

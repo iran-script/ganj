@@ -77,7 +77,8 @@ class ProductionSessionDependenciesTest extends TestCase
         $team = Team::where('public_id', $teamData['id'])->sole();
         $invite = $teams->execute($admin, 'createInvite', ['max_uses' => 3], $team->public_id);
         foreach (User::factory()->count(3)->create() as $member) {
-            $teams->execute($member, 'join', ['invite_code' => $invite['invite_code']]);
+            $request = $teams->execute($member, 'join', ['invite_code' => $invite['invite_code']]);
+            $teams->decideJoinRequest($admin, $team->public_id, $request['id'], true);
         }
         $service->execute($admin, 'registerTeam', ['team_id' => $team->public_id], $session->public_id);
         $this->readyFixture($session);

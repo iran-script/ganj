@@ -21,6 +21,7 @@ use App\Http\Controllers\Api\ScoringController;
 use App\Http\Controllers\Api\SubmissionController;
 use App\Http\Controllers\Api\TeamController;
 use App\Http\Middleware\AuthenticateIdentity;
+use App\Http\Middleware\RequireControlCenterAccess;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function (): void {
@@ -30,59 +31,66 @@ Route::prefix('v1')->group(function (): void {
     Route::post('/auth/register', [IdentityController::class, 'register'])->middleware('throttle:identity-register')->name('identity.register');
     Route::post('/auth/login', [IdentityController::class, 'login'])->middleware('throttle:identity-login')->name('identity.login');
     Route::middleware(AuthenticateIdentity::class)->group(function (): void {
-        Route::get('/me/capabilities', [AdminManagementController::class, 'capabilities'])->name('identity.capabilities');
-        Route::middleware('throttle:admin-sensitive')->prefix('admin')->name('admin.')->group(function (): void {
-            Route::get('/users', [AdminManagementController::class, 'users'])->name('users.index');
-            Route::post('/users', [AdminManagementController::class, 'createUser'])->name('users.create');
-            Route::get('/users/{user_id}', [AdminManagementController::class, 'user'])->whereUuid('user_id')->name('users.show');
-            Route::patch('/users/{user_id}', [AdminManagementController::class, 'updateUser'])->whereUuid('user_id')->name('users.update');
-            Route::patch('/users/{user_id}/status', [AdminManagementController::class, 'setStatus'])->whereUuid('user_id')->name('users.status');
-            Route::post('/users/{user_id}/password', [AdminManagementController::class, 'resetPassword'])->whereUuid('user_id')->name('users.password');
-            Route::delete('/users/{user_id}', [AdminManagementController::class, 'deleteUser'])->whereUuid('user_id')->name('users.delete');
-            Route::post('/users/{user_id}/restore', [AdminManagementController::class, 'restoreUser'])->whereUuid('user_id')->name('users.restore');
-            Route::get('/admins', [AdminManagementController::class, 'administrators'])->name('admins.index');
-            Route::post('/admins/{user_id}', [AdminManagementController::class, 'grantAdministrator'])->whereUuid('user_id')->name('admins.grant');
-            Route::delete('/admins/{user_id}', [AdminManagementController::class, 'revokeAdministrator'])->whereUuid('user_id')->name('admins.revoke');
-            Route::get('/roles', [AdminManagementController::class, 'roles'])->name('roles.index');
-            Route::get('/players', [PlayerManagementController::class, 'index'])->name('players.index');
-            Route::get('/players/{user_id}', [PlayerManagementController::class, 'show'])->whereUuid('user_id')->name('players.show');
-            Route::patch('/organizations/{organization_id}/members/{user_id}/role', [OrganizationController::class, 'changeMemberRole'])->whereUuid('organization_id')->whereUuid('user_id')->name('organizations.members.role');
-            Route::post('/organizations/{organization_id}/members', [OrganizationController::class, 'adminAddMember'])->whereUuid('organization_id')->name('organizations.members.add');
-            Route::delete('/organizations/{organization_id}/members/{user_id}', [OrganizationController::class, 'adminRemoveMember'])->whereUuid('organization_id')->whereUuid('user_id')->name('organizations.members.remove');
-            Route::patch('/organizations/{organization_id}/members/{user_id}/status', [OrganizationController::class, 'adminSetMemberStatus'])->whereUuid('organization_id')->whereUuid('user_id')->name('organizations.members.status');
+        Route::middleware(RequireControlCenterAccess::class)->group(function (): void {
+            Route::get('/me/capabilities', [AdminManagementController::class, 'capabilities'])->name('identity.capabilities');
+            Route::middleware('throttle:admin-sensitive')->prefix('admin')->name('admin.')->group(function (): void {
+                Route::get('/users', [AdminManagementController::class, 'users'])->name('users.index');
+                Route::post('/users', [AdminManagementController::class, 'createUser'])->name('users.create');
+                Route::get('/users/{user_id}', [AdminManagementController::class, 'user'])->whereUuid('user_id')->name('users.show');
+                Route::patch('/users/{user_id}', [AdminManagementController::class, 'updateUser'])->whereUuid('user_id')->name('users.update');
+                Route::patch('/users/{user_id}/status', [AdminManagementController::class, 'setStatus'])->whereUuid('user_id')->name('users.status');
+                Route::post('/users/{user_id}/password', [AdminManagementController::class, 'resetPassword'])->whereUuid('user_id')->name('users.password');
+                Route::delete('/users/{user_id}', [AdminManagementController::class, 'deleteUser'])->whereUuid('user_id')->name('users.delete');
+                Route::post('/users/{user_id}/restore', [AdminManagementController::class, 'restoreUser'])->whereUuid('user_id')->name('users.restore');
+                Route::get('/admins', [AdminManagementController::class, 'administrators'])->name('admins.index');
+                Route::post('/admins/{user_id}', [AdminManagementController::class, 'grantAdministrator'])->whereUuid('user_id')->name('admins.grant');
+                Route::delete('/admins/{user_id}', [AdminManagementController::class, 'revokeAdministrator'])->whereUuid('user_id')->name('admins.revoke');
+                Route::get('/roles', [AdminManagementController::class, 'roles'])->name('roles.index');
+                Route::get('/audit-events', [AdminManagementController::class, 'auditEvents'])->name('audit.index');
+                Route::get('/players', [PlayerManagementController::class, 'index'])->name('players.index');
+                Route::get('/players/{user_id}', [PlayerManagementController::class, 'show'])->whereUuid('user_id')->name('players.show');
+                Route::patch('/organizations/{organization_id}/members/{user_id}/role', [OrganizationController::class, 'changeMemberRole'])->whereUuid('organization_id')->whereUuid('user_id')->name('organizations.members.role');
+                Route::post('/organizations/{organization_id}/members', [OrganizationController::class, 'adminAddMember'])->whereUuid('organization_id')->name('organizations.members.add');
+                Route::delete('/organizations/{organization_id}/members/{user_id}', [OrganizationController::class, 'adminRemoveMember'])->whereUuid('organization_id')->whereUuid('user_id')->name('organizations.members.remove');
+                Route::patch('/organizations/{organization_id}/members/{user_id}/status', [OrganizationController::class, 'adminSetMemberStatus'])->whereUuid('organization_id')->whereUuid('user_id')->name('organizations.members.status');
+            });
         });
-        Route::get('/content/locations', [ContentBankController::class, 'locations']);
-        Route::post('/content/locations', [ContentBankController::class, 'saveLocation']);
-        Route::get('/content/locations/{location_id}', [ContentBankController::class, 'showLocation']);
-        Route::patch('/content/locations/{location_id}', [ContentBankController::class, 'saveLocation']);
-        Route::get('/content/qr-bank', [ContentBankController::class, 'qrIndex']);
-        Route::post('/content/qr-bank', [ContentBankController::class, 'qrSave']);
-        Route::get('/content/qr-bank/{qr_id}', [ContentBankController::class, 'qrShow']);
-        Route::patch('/content/qr-bank/{qr_id}', [ContentBankController::class, 'qrSave']);
-        Route::get('/content/qr-bank/{qr_id}/printable', [ContentBankController::class, 'qrPrintable'])->whereUuid('qr_id');
-        Route::get('/content/media', [MediaController::class, 'index']);
-        Route::post('/content/media', [MediaController::class, 'create']);
-        Route::get('/content/media/{asset_id}/download', [MediaController::class, 'download']);
+        Route::get('/content/locations', [ContentBankController::class, 'locations'])->middleware(RequireControlCenterAccess::class);
+        Route::post('/content/locations', [ContentBankController::class, 'saveLocation'])->middleware(RequireControlCenterAccess::class);
+        Route::get('/content/locations/{location_id}', [ContentBankController::class, 'showLocation'])->middleware(RequireControlCenterAccess::class);
+        Route::patch('/content/locations/{location_id}', [ContentBankController::class, 'saveLocation'])->middleware(RequireControlCenterAccess::class);
+        Route::get('/content/qr-bank', [ContentBankController::class, 'qrIndex'])->middleware(RequireControlCenterAccess::class);
+        Route::post('/content/qr-bank', [ContentBankController::class, 'qrSave'])->middleware(RequireControlCenterAccess::class);
+        Route::get('/content/qr-bank/{qr_id}', [ContentBankController::class, 'qrShow'])->middleware(RequireControlCenterAccess::class);
+        Route::patch('/content/qr-bank/{qr_id}', [ContentBankController::class, 'qrSave'])->middleware(RequireControlCenterAccess::class);
+        Route::get('/content/qr-bank/{qr_id}/printable', [ContentBankController::class, 'qrPrintable'])->whereUuid('qr_id')->middleware(RequireControlCenterAccess::class);
+        Route::get('/content/media', [MediaController::class, 'index'])->middleware(RequireControlCenterAccess::class);
+        Route::post('/content/media', [MediaController::class, 'create'])->middleware(RequireControlCenterAccess::class);
+        Route::get('/content/media/{asset_id}/download', [MediaController::class, 'download'])->middleware(RequireControlCenterAccess::class);
         Route::get('/runtime/nodes/{node_instance_id}/media', [MediaController::class, 'runtime']);
         Route::post('/runtime/nodes/{node_instance_id}/evidence', [SubmissionController::class, 'upload'])->middleware('throttle:runtime-submit');
-        Route::get('/submissions', [SubmissionController::class, 'index']);
+        Route::get('/submissions', [SubmissionController::class, 'index'])->middleware(RequireControlCenterAccess::class);
         Route::get('/submissions/{submission_id}', [SubmissionController::class, 'show']);
-        Route::post('/submissions/{submission_id}/review', [SubmissionController::class, 'review']);
+        Route::post('/submissions/{submission_id}/review', [SubmissionController::class, 'review'])->middleware(RequireControlCenterAccess::class);
         Route::get('/submissions/{submission_id}/download', [SubmissionController::class, 'download']);
         Route::post('/locations', [LocationController::class, 'submit'])->middleware('throttle:location-submit')->name('locations.submit');
         Route::post('/locations/batch', [LocationController::class, 'submit'])->middleware('throttle:location-submit')->name('locations.batch');
         Route::get('/game-sessions/{session_id}/players/me/location-policy', [LocationController::class, 'policy'])->name('locations.policy');
-        Route::get('/checkpoints', [CheckpointController::class, 'index'])->name('checkpoints.index');
-        Route::post('/checkpoints', [CheckpointController::class, 'save'])->name('checkpoints.create');
-        Route::get('/checkpoints/{checkpoint_id}', [CheckpointController::class, 'show'])->name('checkpoints.show');
-        Route::patch('/checkpoints/{checkpoint_id}', [CheckpointController::class, 'save'])->name('checkpoints.update');
+        Route::middleware(RequireControlCenterAccess::class)->group(function (): void {
+            Route::get('/checkpoints', [CheckpointController::class, 'index'])->name('checkpoints.index');
+            Route::post('/checkpoints', [CheckpointController::class, 'save'])->name('checkpoints.create');
+            Route::get('/checkpoints/{checkpoint_id}', [CheckpointController::class, 'show'])->name('checkpoints.show');
+            Route::patch('/checkpoints/{checkpoint_id}', [CheckpointController::class, 'save'])->name('checkpoints.update');
+        });
         Route::post('/qr/scan', [QrController::class, 'scan'])->middleware('throttle:qr-scan')->name('qr.scan');
-        Route::get('/qr/triggers', [QrController::class, 'index'])->name('qr.triggers.index');
-        Route::post('/qr/triggers', [QrController::class, 'create'])->name('qr.triggers.create');
-        Route::get('/qr/triggers/{trigger_id}', [QrController::class, 'show'])->name('qr.triggers.show');
-        foreach (['activate', 'deactivate', 'revoke'] as $action) {
-            Route::post('/qr/triggers/{trigger_id}/'.$action, [QrController::class, 'lifecycle'])->defaults('action', $action)->name('qr.triggers.'.$action);
-        }
+        Route::middleware(RequireControlCenterAccess::class)->group(function (): void {
+            Route::get('/qr/triggers', [QrController::class, 'index'])->name('qr.triggers.index');
+            Route::post('/qr/triggers', [QrController::class, 'create'])->name('qr.triggers.create');
+            Route::get('/qr/triggers/{trigger_id}', [QrController::class, 'show'])->name('qr.triggers.show');
+            foreach (['activate', 'deactivate', 'revoke'] as $action) {
+                Route::post('/qr/triggers/{trigger_id}/'.$action, [QrController::class, 'lifecycle'])->defaults('action', $action)->name('qr.triggers.'.$action);
+            }
+        });
         Route::get('/game-sessions/{session_id}/runtime', [RuntimeController::class, 'read'])->name('runtime.session');
         Route::get('/game-sessions/{session_id}/teams/{team_id}/runtime', [RuntimeController::class, 'read'])->name('runtime.team');
         Route::get('/game-sessions/{session_id}/players/me/runtime', [RuntimeController::class, 'read'])->name('runtime.self');

@@ -5,7 +5,6 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Activity, BarChart3, Boxes, FileText, Gamepad2, KeyRound, LayoutDashboard, LogOut, PanelRightClose, PanelRightOpen, Settings2, ShieldCheck, Sparkles, Users, type LucideIcon } from 'lucide-react';
 import { ContentNavigation } from '@/components/content-navigation';
-import { api, clearStoredToken } from '@/lib/api-client';
 import { queries } from '@/lib/queries';
 import { Button, ErrorState, LoadingState, SidebarLink, ThemeSwitcher } from '@/components/ui';
 
@@ -16,6 +15,8 @@ const links: Array<[string, string, LucideIcon]> = [
   ['/reports', 'گزارش‌ها', BarChart3], ['/admin', 'مدیریت', Settings2], ['/admin/users', 'اعضای سازمان', Users], ['/admin/admins', 'مدیران سراسری', ShieldCheck], ['/admin/roles', 'نقش‌ها', KeyRound],
 ];
 
+links.push(['/admin/audit', 'Audit Log', Activity]);
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname(); const router = useRouter(); const cache = useQueryClient(); const [collapsed, setCollapsed] = useState(false);
   const me = useQuery({ ...queries.me(), retry: false }); const capabilities = useQuery({ ...queries.capabilities(), enabled: !me.isPending && !me.isError });
@@ -23,9 +24,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   if (me.isPending) return <LoadingState label="در حال آماده‌سازی مرکز کنترل..." />;
   if (me.isError) return <div className="flex min-h-screen items-center justify-center p-6"><div className="w-full max-w-md"><ErrorState message="برای ورود به مرکز کنترل، ابتدا احراز هویت کنید." /><div className="mt-4 text-center"><Button href="/login">ورود به مرکز کنترل</Button></div></div></div>;
   const allowed = new Set(capabilities.data?.capabilities ?? []);
-  const visibleLinks = links.filter(([href]) => { if (href === '/admin/users' || href === '/admin/admins') return allowed.has('admin.users.view'); if (href === '/admin/roles') return allowed.has('admin.roles.view'); if (href === '/admin/members' || href === '/admin/org-admins') return allowed.has('organization.members.manage'); if (href === '/players') return allowed.has('admin.players.view'); if (href === '/admin') return allowed.has('admin.users.view') || allowed.has('organization.members.manage'); return true; });
+  const visibleLinks = links.filter(([href]) => { if (href === '/admin/users' || href === '/admin/admins') return allowed.has('admin.users.view'); if (href === '/admin/roles') return allowed.has('admin.roles.view'); if (href === '/admin/audit') return allowed.has('admin.audit.view'); if (href === '/admin/members' || href === '/admin/org-admins') return allowed.has('organization.members.manage'); if (href === '/players') return allowed.has('admin.players.view'); if (href === '/admin') return allowed.has('admin.users.view') || allowed.has('organization.members.manage'); return true; });
   const current = pathname.replace('/control', '') || '/';
-  const logout = async () => { try { await api.post('/auth/logout'); } finally { clearStoredToken(); cache.clear(); router.replace('/login'); } };
+  const logout = async () => { try { await fetch('/api/control/logout', { method: 'POST', credentials: 'same-origin' }); } finally { cache.clear(); router.replace('/login'); } };
   return <div className="min-h-screen bg-[var(--nexo-bg)]">
     <aside className={`fixed inset-y-0 right-0 z-20 hidden overflow-y-auto border-l border-[var(--nexo-border)] bg-[var(--nexo-sidebar)] px-3 py-5 transition-[width] duration-200 lg:block ${collapsed ? 'w-20' : 'w-64'}`}>
       <div className={`mb-9 flex items-center gap-3 px-2 ${collapsed ? 'justify-center' : ''}`}><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--nexo-primary)] font-black text-white shadow-[0_0_24px_rgb(139_92_246/30%)]">N</div>{!collapsed && <div><div className="font-black tracking-[0.2em] text-[var(--nexo-text)]">NEXO</div><div className="text-[10px] text-[var(--nexo-muted)]">GAME MASTER</div></div>}</div>

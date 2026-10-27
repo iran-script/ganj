@@ -35,8 +35,8 @@ class AuthoringResourcesTest extends TestCase
         $payload['latitude'] = 36;
         $this->patchJson('/api/v1/content/locations/'.$id, $payload)->assertOk()->assertJsonPath('data.latitude', 36);
         $this->scenarioAuth(User::factory()->create());
-        $this->getJson('/api/v1/content/locations/'.$id)->assertNotFound();
-        $this->patchJson('/api/v1/content/locations/'.$id, $payload)->assertNotFound();
+        $this->getJson('/api/v1/content/locations/'.$id)->assertForbidden();
+        $this->patchJson('/api/v1/content/locations/'.$id, $payload)->assertForbidden();
     }
 
     public function test_qr_bank_never_returns_secrets_and_validates_metadata(): void
@@ -66,8 +66,8 @@ class AuthoringResourcesTest extends TestCase
         $this->getJson('/api/v1/content/qr-bank/'.$id.'/printable')->assertStatus(409);
         $this->getJson('/api/v1/content/qr-bank?active_only=1')->assertOk()->assertJsonCount(0, 'data');
         $this->scenarioAuth(User::factory()->create());
-        $this->getJson('/api/v1/content/qr-bank/'.$id)->assertNotFound();
-        $this->getJson('/api/v1/content/qr-bank/'.$id.'/printable')->assertNotFound();
+        $this->getJson('/api/v1/content/qr-bank/'.$id)->assertForbidden();
+        $this->getJson('/api/v1/content/qr-bank/'.$id.'/printable')->assertForbidden();
     }
 
     public function test_media_is_private_and_cross_tenant_graph_references_are_rejected(): void
@@ -82,7 +82,7 @@ class AuthoringResourcesTest extends TestCase
         $this->assertSame('PASS', app(GraphValidator::class)->validate($graph, $scenario->organization_id)['status']);
         $this->assertContains('DEPENDENCY_NOT_READY', array_column(app(GraphValidator::class)->validate($graph, $other->organization_id)['errors'], 'code'));
         $this->scenarioAuth(User::factory()->create());
-        $this->getJson('/api/v1/content/media/'.$created['id'].'/download')->assertNotFound();
+        $this->getJson('/api/v1/content/media/'.$created['id'].'/download')->assertForbidden();
     }
 
     public function test_provisioned_qr_resolves_through_the_existing_secure_scan_flow(): void
@@ -113,7 +113,7 @@ class AuthoringResourcesTest extends TestCase
         $this->postJson($url, ['file' => UploadedFile::fake()->create('large.pdf', 11000, 'application/pdf'), 'capture_source' => 'LIBRARY'], $headers)->assertUnprocessable();
         $id = $this->postJson($url, ['file' => $file, 'capture_source' => 'LIBRARY'], $headers)->assertCreated()->assertJsonPath('data.status', 'PENDING')->json('data.id');
         $this->get('/api/v1/submissions/'.$id.'/download')->assertOk()->assertHeader('Content-Type', 'application/pdf');
-        $this->postJson('/api/v1/submissions/'.$id.'/review', ['status' => 'APPROVED', 'message' => 'Self approval'])->assertNotFound();
+        $this->postJson('/api/v1/submissions/'.$id.'/review', ['status' => 'APPROVED', 'message' => 'Self approval'])->assertForbidden();
         $this->scenarioAuth($admin);
         $this->postJson('/api/v1/submissions/'.$id.'/review', ['status' => 'APPROVED', 'message' => 'Accepted'])->assertOk();
         $this->assertSame('COMPLETED', $node->fresh()->status);

@@ -44,6 +44,16 @@ class AdminManagementRequest extends FormRequest
                 'organization_id' => ['sometimes', 'uuid'],
             ],
             'administrators' => $this->paginationRules() + ['q' => ['sometimes', 'nullable', 'string', 'max:255']],
+            'auditEvents' => [
+                'q' => ['sometimes', 'nullable', 'string', 'max:255'],
+                'action' => ['sometimes', 'string', 'max:128'],
+                'resource_type' => ['sometimes', 'string', 'max:128'],
+                'actor_id' => ['sometimes', 'uuid'],
+                'organization_id' => ['sometimes', 'uuid'],
+                'from' => ['sometimes', 'date'],
+                'to' => ['sometimes', 'date', 'after_or_equal:from'],
+                'page' => ['sometimes', 'integer', 'min:1'],
+            ] + ['limit' => ['sometimes', 'integer', 'min:1', 'max:100']],
             'index' => $this->paginationRules() + ['q' => ['sometimes', 'nullable', 'string', 'max:255'], 'status' => ['sometimes', Rule::enum(UserStatus::class)]],
             default => [],
         };

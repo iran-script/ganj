@@ -9,6 +9,7 @@ use App\Services\Audit\AuditService;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -48,6 +49,9 @@ class IdentityService
                 throw new ApiException('AUTHENTICATION_REQUIRED', 'The credentials are invalid.', [], 401);
             }
             $user->ensureActive();
+            if (($input['platform'] ?? null) === 'web' && ! Gate::forUser($user)->allows('admin.players.view')) {
+                throw new ApiException('AUTHORIZATION_DENIED', 'Control Center access is restricted to authorized operators.', [], 403);
+            }
             if (Hash::needsRehash($user->password_hash)) {
                 $user->password_hash = Hash::make($input['password']);
             }
@@ -82,7 +86,13 @@ class IdentityService
     private function issueToken(User $user, UserDevice $device): array
     {
         $plain = Str::random(64);
-        $token = $user->tokens()->make(['name' => 'player-device', 'token' => hash('sha256', $plain), 'abilities' => ['*'], 'expires_at' => now()->addMinutes(config('sanctum.expiration'))]);
+        $isControlCenter = $device->platform === 'web' && Gate::forUser($user)->allows('admin.players.view');
+        $token = $user->tokens()->make([
+            'name' => $isControlCenter ? 'control-center' : 'player-device',
+            'token' => hash('sha256', $plain),
+            'abilities' => [$isControlCenter ? 'control-center' : 'player'],
+            'expires_at' => now()->addMinutes(config('sanctum.expiration')),
+        ]);
         $token->forceFill(['user_device_id' => $device->id])->save();
 
         return ['user' => $user->publicProfile(), 'device' => $device->publicProfile(), 'token' => $plain];

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Exceptions\ApiException;
 use App\Http\Middleware\AuthenticateIdentity;
 use App\Http\Middleware\RequireDevice;
+use App\Models\RoleAssignment;
 use App\Models\User;
 use App\Models\UserDevice;
 use App\Services\Identity\DeviceResolver;
@@ -111,6 +112,53 @@ class IdentityApiTest extends TestCase
         $this->postJson('/api/v1/auth/login', array_replace($input, ['password' => 'wrong']))->assertUnauthorized()->assertJsonPath('error.code', 'AUTHENTICATION_REQUIRED');
         $this->postJson('/api/v1/auth/login', array_replace($input, ['email' => 'missing@example.com']))->assertUnauthorized()->assertJsonPath('error.code', 'AUTHENTICATION_REQUIRED');
         $this->assertDatabaseCount('personal_access_tokens', 1);
+    }
+
+    public function test_control_center_login_rejects_players_and_revoked_roles_on_later_requests(): void
+    {
+        $playerInput = $this->input(['password' => 'password', 'platform' => 'web']);
+        unset($playerInput['name']);
+        User::factory()->create(['email' => $playerInput['email'], 'password_hash' => Hash::make($playerInput['password'])]);
+        $this->postJson('/api/v1/auth/login', $playerInput)->assertForbidden()->assertJsonPath('error.code', 'AUTHORIZATION_DENIED');
+        $this->assertDatabaseCount('personal_access_tokens', 0);
+        $this->assertDatabaseCount('user_devices', 0);
+
+        $adminInput = $this->input(['email' => 'operator@example.com', 'password' => 'password', 'platform' => 'web']);
+        unset($adminInput['name']);
+        $admin = User::factory()->create(['email' => $adminInput['email'], 'password_hash' => Hash::make($adminInput['password'])]);
+        $assignment = RoleAssignment::factory()->create(['user_id' => $admin->id]);
+        $mobileInput = array_replace($adminInput, ['device_uuid' => (string) Str::uuid(), 'platform' => 'android']);
+        $mobileToken = $this->postJson('/api/v1/auth/login', $mobileInput)->assertOk()->json('data.token');
+        $this->withToken($mobileToken)->getJson('/api/v1/admin/users')->assertForbidden();
+
+        $result = $this->postJson('/api/v1/auth/login', $adminInput)->assertOk()->json('data');
+        $tokenAbilities = DB::table('personal_access_tokens')->where('token', hash('sha256', $result['token']))->value('abilities');
+        $this->assertSame(['control-center'], json_decode($tokenAbilities, true));
+        $this->withToken($result['token'])->getJson('/api/v1/me/capabilities')->assertOk();
+
+        $webDevice = UserDevice::query()->where('public_id', $result['device']['id'])->firstOrFail();
+        $webDevice->forceFill(['platform' => 'android'])->save();
+        $this->getJson('/api/v1/me/capabilities')->assertForbidden();
+        $webDevice->forceFill(['platform' => 'web'])->save();
+
+        $assignment->forceFill(['revoked_at' => now()])->save();
+        $this->getJson('/api/v1/me/capabilities')->assertForbidden()->assertJsonPath('error.code', 'AUTHORIZATION_DENIED');
+    }
+
+    public function test_player_token_cannot_access_administrative_api_and_mobile_identity_remains_available(): void
+    {
+        $player = User::factory()->create(['password_hash' => Hash::make('password')]);
+        $playerInput = $this->input(['email' => $player->email, 'password' => 'password']);
+        unset($playerInput['name']);
+        $login = $this->postJson('/api/v1/auth/login', $playerInput)->assertOk()->json('data');
+        $tokenAbilities = DB::table('personal_access_tokens')->where('token', hash('sha256', $login['token']))->value('abilities');
+        $this->assertSame(['player'], json_decode($tokenAbilities, true));
+
+        $this->withToken($login['token'])->getJson('/api/v1/me')->assertOk();
+        $this->getJson('/api/v1/admin/users')->assertForbidden()->assertJsonPath('error.code', 'AUTHORIZATION_DENIED');
+        $this->getJson('/api/v1/me/capabilities')->assertForbidden();
+        $this->getJson('/api/v1/content/locations')->assertForbidden();
+        $this->getJson('/api/v1/checkpoints')->assertForbidden();
     }
 
     public static function statuses(): array

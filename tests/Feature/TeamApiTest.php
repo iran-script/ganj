@@ -111,7 +111,7 @@ class TeamApiTest extends TestCase
         $response = $this->postJson('/api/v1/teams/'.$team->public_id.'/invites', ['max_uses' => 2])->assertCreated();
         $code = $response->json('data.invite_code');
         $invite = TeamInvite::sole();
-        $this->assertSame(64, strlen($code));
+        $this->assertSame(16, strlen($code));
         $this->assertSame(hash('sha256', $code), $invite->code_hash);
         $this->assertStringNotContainsString($code, $invite->toJson());
         $this->assertStringNotContainsString($invite->code_hash, $invite->toJson());
@@ -126,16 +126,30 @@ class TeamApiTest extends TestCase
         $team = Team::factory()->create();
         TeamInvite::factory()->code('history-code')->create(['team_id' => $team->id]);
         $member = $this->authenticate();
-        $this->postJson('/api/v1/teams/join', ['invite_code' => 'history-code'])->assertOk()->assertJsonPath('data.member_count', 2);
+        $requestId = $this->postJson('/api/v1/teams/join', ['invite_code' => 'history-code'])
+            ->assertOk()->assertJsonPath('data.status', 'PENDING')->json('data.id');
+        $this->authenticate($team->captain);
+        $this->postJson('/api/v1/teams/'.$team->public_id.'/join-requests/'.$requestId.'/accept')->assertOk()
+            ->assertJsonPath('data.status', 'ACCEPTED');
+        $this->authenticate($member);
         $this->postJson('/api/v1/teams/join', ['invite_code' => 'history-code'])->assertConflict()->assertJsonPath('error.code', 'ALREADY_TEAM_MEMBER');
         $this->postJson('/api/v1/teams/'.$team->public_id.'/leave')->assertNoContent();
-        $this->postJson('/api/v1/teams/join', ['invite_code' => 'history-code'])->assertOk();
+        TeamInvite::factory()->code('history-code-two')->create(['team_id' => $team->id]);
+        $requestId = $this->postJson('/api/v1/teams/join', ['invite_code' => 'history-code-two'])
+            ->assertOk()->assertJsonPath('data.status', 'PENDING')->json('data.id');
         $this->authenticate($team->captain);
+        $this->postJson('/api/v1/teams/'.$team->public_id.'/join-requests/'.$requestId.'/accept')->assertOk()
+            ->assertJsonPath('data.status', 'ACCEPTED');
         $this->deleteJson('/api/v1/teams/'.$team->public_id.'/members/'.$member->public_id)->assertNoContent();
+        TeamInvite::factory()->code('history-code-three')->create(['team_id' => $team->id]);
         $this->authenticate($member);
-        $this->postJson('/api/v1/teams/join', ['invite_code' => 'history-code'])->assertOk();
+        $requestId = $this->postJson('/api/v1/teams/join', ['invite_code' => 'history-code-three'])
+            ->assertOk()->assertJsonPath('data.status', 'PENDING')->json('data.id');
+        $this->authenticate($team->captain);
+        $this->postJson('/api/v1/teams/'.$team->public_id.'/join-requests/'.$requestId.'/accept')->assertOk()
+            ->assertJsonPath('data.status', 'ACCEPTED');
         $this->assertSame(['LEFT', 'REMOVED', 'ACTIVE'], TeamMember::where('user_id', $member->id)->orderBy('id')->pluck('status')->all());
-        $this->assertSame(3, TeamInvite::sole()->uses_count);
+        $this->assertSame(3, TeamInvite::query()->sum('uses_count'));
         $this->assertDatabaseHas('team_members', ['user_id' => $member->id, 'status' => 'REMOVED', 'removed_by' => $team->captain_user_id]);
         $this->assertDatabaseCount('team_member_events', 5);
     }
@@ -170,6 +184,9 @@ class TeamApiTest extends TestCase
         $invite = TeamInvite::factory()->code('join-once')->create(['team_id' => $other->id, 'max_uses' => 1]);
         $joined = $this->withHeader('Idempotency-Key', 'join-once-key')->postJson('/api/v1/teams/join', ['invite_code' => 'join-once'])->assertOk();
         $this->postJson('/api/v1/teams/join', ['invite_code' => 'join-once'])->assertOk()->assertExactJson($joined->json());
+        $this->authenticate($other->captain);
+        $this->postJson('/api/v1/teams/'.$other->public_id.'/join-requests/'.$joined->json('data.id').'/accept')
+            ->assertOk()->assertJsonPath('data.status', 'ACCEPTED');
         $this->assertSame(1, $invite->fresh()->uses_count);
         $this->assertSame(2, TeamMember::where('user_id', $actor->id)->where('status', 'ACTIVE')->count());
     }

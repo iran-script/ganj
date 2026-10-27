@@ -24,9 +24,9 @@ class ManagementApiTest extends TestCase
     private function authenticate(?User $user = null): User
     {
         $user ??= User::factory()->create();
-        $device = UserDevice::factory()->create(['user_id' => $user->id]);
+        $device = UserDevice::factory()->create(['user_id' => $user->id, 'platform' => 'web']);
         $plain = Str::random(64);
-        $token = $user->tokens()->make(['name' => 'management-test', 'token' => hash('sha256', $plain), 'abilities' => ['*']]);
+        $token = $user->tokens()->make(['name' => 'management-test', 'token' => hash('sha256', $plain), 'abilities' => ['control-center']]);
         $token->forceFill(['user_device_id' => $device->id])->save();
         $this->withToken($plain);
 
@@ -263,7 +263,7 @@ class ManagementApiTest extends TestCase
         $admin = $this->makeSuperAdmin();
         $token = $this->bearerFor($admin);
         $this->withToken($token)->getJson('/api/v1/me')->assertOk()->assertJsonPath('data.roles.0', 'PLAYER')->assertJsonMissingPath('data.capabilities');
-        $this->getJson('/api/v1/me/capabilities')->assertOk()->assertJsonPath('data.global_roles.0', 'SUPER_ADMIN')->assertJsonFragment(['admin.users.view']);
+        $this->getJson('/api/v1/me/capabilities')->assertOk()->assertJsonPath('data.global_roles.0', 'SUPER_ADMIN')->assertJsonFragment(['admin.users.view'])->assertJsonFragment(['admin.audit.view']);
     }
 
     public function test_audit_history_redacts_secret_metadata(): void
@@ -279,9 +279,9 @@ class ManagementApiTest extends TestCase
 
     private function bearerFor(User $user): string
     {
-        $device = UserDevice::factory()->create(['user_id' => $user->id]);
+        $device = UserDevice::factory()->create(['user_id' => $user->id, 'platform' => 'web']);
         $plain = Str::random(64);
-        $token = $user->tokens()->make(['name' => 'management-test', 'token' => hash('sha256', $plain), 'abilities' => ['*']]);
+        $token = $user->tokens()->make(['name' => 'management-test', 'token' => hash('sha256', $plain), 'abilities' => ['control-center']]);
         $token->forceFill(['user_device_id' => $device->id])->save();
 
         return $plain;

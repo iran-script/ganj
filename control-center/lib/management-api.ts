@@ -3,6 +3,9 @@ import type { ApiEnvelope, PaginationMeta, User } from '@/types/api';
 
 export type ManagementPage<T> = { data: T[]; meta?: { pagination?: PaginationMeta } };
 export type ManagementListOptions = { cursor?: string; q?: string; status?: string; role?: string; organization_id?: string };
+export type AuditEvent = { actor_type: string; actor_id: string | null; action: string; resource_type: string; resource_id: string; organization_id: string | null; occurred_at: string };
+export type AuditListOptions = { page?: number; limit?: number; q?: string; action?: string; resource_type?: string; actor_id?: string; organization_id?: string; from?: string; to?: string };
+export type AuditPage = { data: AuditEvent[]; meta: { pagination: { page: number; per_page: number; total: number; last_page: number } } };
 export type ManagedUserInput = { name: string; email?: string | null; mobile?: string | null; password?: string; reason: string };
 export type ManagedMembership = { organization: { id: string; name: string }; role: string; status: string; joined_at?: string | null; left_at?: string | null };
 export type ManagedUser = Omit<User, 'status'> & {
@@ -43,6 +46,11 @@ export const managementApi = {
   grantAdministrator: (id: string, reason: string) => request(`/admin/admins/${id}`, { method: 'POST', body: JSON.stringify({ reason }) }),
   revokeAdministrator: (id: string, reason: string) => request<void>(`/admin/admins/${id}`, { method: 'DELETE', body: JSON.stringify({ reason }) }),
   roles: () => request<ManagedRoleOverview>('/admin/roles'),
+  auditEvents: (options: AuditListOptions = {}) => {
+    const query = new URLSearchParams();
+    Object.entries(options).forEach(([key, value]) => { if (value !== undefined && value !== '') query.set(key, String(value)); });
+    return request<AuditPage>(`/admin/audit-events?${query.toString()}`, {}, false);
+  },
   players: (options: Pick<ManagementListOptions, 'cursor' | 'q' | 'status'> = {}) => request<ApiEnvelope<ManagedUser[]>>(pagePath('/admin/players', options), {}, false) as Promise<ManagementPage<ManagedUser>>,
   player: (id: string) => request<PlayerDetail>(`/admin/players/${id}`),
 };

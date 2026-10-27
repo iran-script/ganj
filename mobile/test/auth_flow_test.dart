@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:nexo_player/app/app.dart';
 import 'package:nexo_player/core/api/api_client.dart';
+import 'package:nexo_player/core/config/app_config.dart';
 import 'package:nexo_player/core/auth/auth_controller.dart';
 import 'package:nexo_player/core/errors/api_error.dart';
 import 'package:nexo_player/core/offline/offline_identity.dart';
@@ -62,7 +63,7 @@ void main() {
           if (request.url.path.endsWith('/auth/login')) {
             expect(request.method, 'POST');
             expect(request.url.toString(),
-                'http://2.188.205.35:18100/api/v1/auth/login');
+                '${AppConfig.apiBaseUrl}/auth/login');
             expect(request.headers['accept'], 'application/json');
             expect(request.headers['content-type'], 'application/json');
             expect(jsonDecode(request.body), {

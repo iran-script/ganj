@@ -41,7 +41,7 @@ class GameJourneyApiTest extends TestCase
         ]);
         $version = ScenarioVersion::factory()->create(['scenario_id' => $scenario->id]);
 
-        $this->authenticateGame($admin);
+        $this->scenarioAuth($admin);
         $qr = $this->postJson('/api/v1/qr/triggers', ['organization_id' => $organization->public_id])
             ->assertCreated()->json('data');
 
@@ -99,7 +99,11 @@ class GameJourneyApiTest extends TestCase
         $inviteCode = $this->postJson('/api/v1/teams/'.$teamId.'/invites', ['max_uses' => 3])->assertCreated()->json('data.invite_code');
         foreach (array_slice($players, 1) as $player) {
             $this->asIdentity($player['token'], $player['device_uuid']);
-            $this->postJson('/api/v1/teams/join', ['invite_code' => $inviteCode])->assertOk();
+            $requestId = $this->postJson('/api/v1/teams/join', ['invite_code' => $inviteCode])
+                ->assertOk()->assertJsonPath('data.status', 'PENDING')->json('data.id');
+            $this->asIdentity($captain['token'], $captain['device_uuid']);
+            $this->postJson('/api/v1/teams/'.$teamId.'/join-requests/'.$requestId.'/accept')
+                ->assertOk()->assertJsonPath('data.status', 'ACCEPTED');
         }
 
         $this->authenticateGame($admin);

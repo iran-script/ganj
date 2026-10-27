@@ -1,12 +1,8 @@
 import { ApiErrorResponse } from '@/lib/api-error';
 import type { ApiEnvelope } from '@/types/api';
 
-const TOKEN_KEY = 'nexo.control.token';
+const baseUrl = () => '/api/backend';
 
-/**
- * Creates a client device identifier on HTTP origins as well as secure origins.
- * `crypto.randomUUID()` is restricted to secure contexts in some browsers.
- */
 export function createDeviceUuid(): string {
   const cryptoApi = globalThis.crypto;
   if (typeof cryptoApi?.randomUUID === 'function') {
@@ -24,29 +20,7 @@ export function createDeviceUuid(): string {
   bytes[6] = (bytes[6] & 0x0f) | 0x40;
   bytes[8] = (bytes[8] & 0x3f) | 0x80;
   const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0'));
-
-  return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10, 16).join('')}`;
-}
-
-export function getStoredToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  return window.localStorage.getItem(TOKEN_KEY);
-}
-
-export function storeToken(token: string): void {
-  window.localStorage.setItem(TOKEN_KEY, token);
-}
-
-export function clearStoredToken(): void {
-  window.localStorage.removeItem(TOKEN_KEY);
-}
-
-export function getApiBaseUrl(): string {
-  if (process.env.NODE_ENV === 'production') {
-    return '/api/v1';
-  }
-
-  return (process.env.NEXT_PUBLIC_API_BASE_URL || '/api/v1').replace(/\/$/, '');
+  return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10).join('')}`;
 }
 
 async function request<T>(path: string, init: RequestInit = {}, unwrap = true): Promise<T> {
@@ -55,11 +29,9 @@ async function request<T>(path: string, init: RequestInit = {}, unwrap = true): 
   const headers = new Headers(init.headers);
   headers.set('Accept', 'application/json');
   if (init.body && !(init.body instanceof FormData)) headers.set('Content-Type', 'application/json');
-  const token = getStoredToken();
-  if (token) headers.set('Authorization', `Bearer ${token}`);
 
   try {
-    const response = await fetch(`${getApiBaseUrl()}${path}`, { ...init, headers, signal: controller.signal });
+    const response = await fetch(`${baseUrl()}${path}`, { ...init, headers, credentials: 'same-origin', signal: controller.signal });
     const payload = (response.status === 204 ? null : await response.json().catch(() => null)) as ApiEnvelope<T> | { message?: string; code?: string; details?: Record<string, unknown> } | null;
     if (!response.ok) {
       const body = payload as { error?: { message?: string; code?: string; details?: Record<string, unknown> }; message?: string; code?: string; details?: Record<string, unknown> } | null;
