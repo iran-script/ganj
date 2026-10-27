@@ -70,6 +70,7 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(GameSession::class, GameSessionPolicy::class);
         Gate::define('roles.manageGlobal', fn (User $user): bool => app(OrganizationScope::class)->isSuperAdmin($user));
         Gate::define('admin.users.view', fn (User $user): bool => app(OrganizationScope::class)->isSuperAdmin($user));
+        Gate::define('admin.users.manage', fn (User $user): bool => app(OrganizationScope::class)->isSuperAdmin($user));
         Gate::define('admin.users.status', fn (User $user): bool => app(OrganizationScope::class)->isSuperAdmin($user));
         Gate::define('admin.roles.view', fn (User $user): bool => app(OrganizationScope::class)->isSuperAdmin($user));
         Gate::define('admin.players.view', function (User $user): bool {

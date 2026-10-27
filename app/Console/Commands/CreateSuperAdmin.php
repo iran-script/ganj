@@ -11,7 +11,7 @@ class CreateSuperAdmin extends Command
 {
     protected $signature = 'nexo:super-admin:create {--name= : Full name} {--email= : Email address} {--mobile= : Mobile number} {--reason= : Required audit reason}';
 
-    protected $description = 'Create an idempotent local test Super Admin without changing existing accounts';
+    protected $description = 'Create or promote an idempotent local Super Admin account';
 
     public function handle(GlobalRoleService $roles): int
     {
@@ -35,7 +35,12 @@ class CreateSuperAdmin extends Command
             return self::FAILURE;
         }
 
-        $this->info($user->wasRecentlyCreated ? 'Super Admin account created.' : 'Super Admin account already exists; no changes were made.');
+        $message = match (true) {
+            $user->wasRecentlyCreated => 'Super Admin account created.',
+            $user->wasChanged('password_hash') => 'Super Admin account upgraded.',
+            default => 'Super Admin account already exists; no changes were made.',
+        };
+        $this->info($message);
         $this->line('User ID: '.$user->public_id);
 
         return self::SUCCESS;

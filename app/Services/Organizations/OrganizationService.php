@@ -43,7 +43,8 @@ class OrganizationService
         $context->authorize('manageMembers');
         $input = OrganizationInput::validate($input, 'members');
 
-        $query = $context->scope(OrganizationMember::query())->where('organization_members.status', OrganizationMemberStatus::Active->value)
+        $statuses = isset($input['status']) ? explode(',', $input['status']) : [OrganizationMemberStatus::Active->value];
+        $query = $context->scope(OrganizationMember::query())->whereIn('organization_members.status', $statuses)
             ->join('users', 'users.id', '=', 'organization_members.user_id')->select('organization_members.*', 'users.public_id as cursor_user_id')
             ->with('user');
         if (isset($input['role'])) {
@@ -135,6 +136,29 @@ class OrganizationService
         });
     }
 
+    public function setMemberStatus(User $actor, string $organizationId, string $userId, array $input): OrganizationMember
+    {
+        return $this->write(function () use ($actor, $organizationId, $userId, $input): OrganizationMember {
+            $context = $this->mutationContext($actor, $organizationId, 'manageMembers');
+            $input = OrganizationInput::validate($input, 'setMemberStatus');
+            $member = $this->memberForStatus($context, $userId);
+            $before = $member->publicProfile();
+            $member->forceFill([
+                'status' => $input['status'],
+                'left_at' => null,
+            ])->save();
+            if ($before['status'] !== $member->status) {
+                $this->events->record('organization.member_status_changed.v1', $context->actor, $context->organization, [
+                    'user_id' => $member->user->public_id,
+                    'before' => $before,
+                    'after' => $member->publicProfile(),
+                ], $input['reason']);
+            }
+
+            return $member;
+        });
+    }
+
     public function removeMember(User $actor, string $organizationId, string $userId, array $input = []): void
     {
         $this->write(function () use ($actor, $organizationId, $userId, $input): void {
@@ -186,6 +210,20 @@ class OrganizationService
         }
         $member = $context->organization->members()->where('status', OrganizationMemberStatus::Active->value)
             ->whereHas('user', fn ($users) => $users->where('public_id', $userId))->with('user')->lockForUpdate()->first();
+        if (! $member) {
+            throw $this->scope->notFound();
+        }
+
+        return $member;
+    }
+
+    private function memberForStatus(OrganizationContext $context, string $userId): OrganizationMember
+    {
+        if (! Str::isUuid($userId)) {
+            throw $this->scope->notFound();
+        }
+        $member = $context->organization->members()->whereHas('user', fn ($users) => $users->where('public_id', $userId))
+            ->with('user')->orderByDesc('id')->lockForUpdate()->first();
         if (! $member) {
             throw $this->scope->notFound();
         }

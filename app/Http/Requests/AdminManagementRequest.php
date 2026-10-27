@@ -19,6 +19,22 @@ class AdminManagementRequest extends FormRequest
     public function rules(): array
     {
         return match ($this->route()->getActionMethod()) {
+            'createUser' => [
+                'name' => ['required', 'string', 'max:255'],
+                'email' => ['sometimes', 'nullable', 'email:rfc', 'max:255'],
+                'mobile' => ['sometimes', 'nullable', 'string', 'regex:/^\+?[0-9]{7,15}$/'],
+                'password' => ['required', 'string', 'min:12', 'max:72'],
+                'reason' => ['required', 'string', 'min:3', 'max:1000'],
+            ],
+            'updateUser' => [
+                'name' => ['sometimes', 'required', 'string', 'max:255'],
+                'email' => ['sometimes', 'nullable', 'email:rfc', 'max:255'],
+                'mobile' => ['sometimes', 'nullable', 'string', 'regex:/^\+?[0-9]{7,15}$/'],
+                'reason' => ['required', 'string', 'min:3', 'max:1000'],
+            ],
+            'resetPassword' => ['password' => ['required', 'string', 'min:12', 'max:72'], 'reason' => ['required', 'string', 'min:3', 'max:1000']],
+            'deleteUser' => ['reason' => ['required', 'string', 'min:3', 'max:1000']],
+            'restoreUser' => ['reason' => ['required', 'string', 'min:3', 'max:1000']],
             'setStatus' => ['status' => ['required', Rule::enum(UserStatus::class)], 'reason' => ['required', 'string', 'min:3', 'max:1000']],
             'grantAdministrator', 'revokeAdministrator' => ['reason' => ['required', 'string', 'min:3', 'max:1000']],
             'users' => $this->paginationRules() + [

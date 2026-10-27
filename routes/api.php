@@ -32,8 +32,13 @@ Route::prefix('v1')->group(function (): void {
         Route::get('/me/capabilities', [AdminManagementController::class, 'capabilities'])->name('identity.capabilities');
         Route::middleware('throttle:admin-sensitive')->prefix('admin')->name('admin.')->group(function (): void {
             Route::get('/users', [AdminManagementController::class, 'users'])->name('users.index');
+            Route::post('/users', [AdminManagementController::class, 'createUser'])->name('users.create');
             Route::get('/users/{user_id}', [AdminManagementController::class, 'user'])->whereUuid('user_id')->name('users.show');
+            Route::patch('/users/{user_id}', [AdminManagementController::class, 'updateUser'])->whereUuid('user_id')->name('users.update');
             Route::patch('/users/{user_id}/status', [AdminManagementController::class, 'setStatus'])->whereUuid('user_id')->name('users.status');
+            Route::post('/users/{user_id}/password', [AdminManagementController::class, 'resetPassword'])->whereUuid('user_id')->name('users.password');
+            Route::delete('/users/{user_id}', [AdminManagementController::class, 'deleteUser'])->whereUuid('user_id')->name('users.delete');
+            Route::post('/users/{user_id}/restore', [AdminManagementController::class, 'restoreUser'])->whereUuid('user_id')->name('users.restore');
             Route::get('/admins', [AdminManagementController::class, 'administrators'])->name('admins.index');
             Route::post('/admins/{user_id}', [AdminManagementController::class, 'grantAdministrator'])->whereUuid('user_id')->name('admins.grant');
             Route::delete('/admins/{user_id}', [AdminManagementController::class, 'revokeAdministrator'])->whereUuid('user_id')->name('admins.revoke');
@@ -43,6 +48,7 @@ Route::prefix('v1')->group(function (): void {
             Route::patch('/organizations/{organization_id}/members/{user_id}/role', [OrganizationController::class, 'changeMemberRole'])->whereUuid('organization_id')->whereUuid('user_id')->name('organizations.members.role');
             Route::post('/organizations/{organization_id}/members', [OrganizationController::class, 'adminAddMember'])->whereUuid('organization_id')->name('organizations.members.add');
             Route::delete('/organizations/{organization_id}/members/{user_id}', [OrganizationController::class, 'adminRemoveMember'])->whereUuid('organization_id')->whereUuid('user_id')->name('organizations.members.remove');
+            Route::patch('/organizations/{organization_id}/members/{user_id}/status', [OrganizationController::class, 'adminSetMemberStatus'])->whereUuid('organization_id')->whereUuid('user_id')->name('organizations.members.status');
         });
         Route::get('/content/locations', [ContentBankController::class, 'locations']);
         Route::post('/content/locations', [ContentBankController::class, 'saveLocation']);

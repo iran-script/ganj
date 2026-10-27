@@ -58,7 +58,10 @@ class GlobalRoleService
                     return $existing;
                 }
 
-                throw new ApiException('CONFLICT', 'An account with this identifier already exists and was not changed.', [], 409);
+                $existing->forceFill(['password_hash' => Hash::make($password)])->save();
+                $this->recordGrant(null, $existing, $reason);
+
+                return $existing;
             }
 
             $user = User::create(['name' => $name, 'email' => $email, 'mobile' => $mobile, 'password_hash' => Hash::make($password)]);

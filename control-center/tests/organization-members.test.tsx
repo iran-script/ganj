@@ -5,11 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OrganizationMembersPage } from '@/components/organization-members';
 import { organizationMembersApi } from '@/lib/organization-members-api';
 
-vi.mock('@/lib/organization-members-api', () => ({ organizationMembersApi: { organizations: vi.fn(), members: vi.fn() } }));
+vi.mock('@/lib/organization-members-api', () => ({ organizationMembersApi: { organizations: vi.fn(), members: vi.fn(), add: vi.fn(), changeRole: vi.fn(), remove: vi.fn(), setStatus: vi.fn() } }));
 const organization = { id: 'org-1', name: 'سازمان یک' };
 const members = [
-  { user_id: 'user-1', name: 'مدیر سازمان', role: 'ORGANIZATION_ADMIN' as const, status: 'ACTIVE', joined_at: '2026-01-01T00:00:00Z' },
-  { user_id: 'user-2', name: 'کارشناس', role: 'STAFF' as const, status: 'ACTIVE', joined_at: '2026-01-02T00:00:00Z' },
+  { user_id: 'user-1', name: 'مدیر سازمان', role: 'ORGANIZATION_ADMIN' as const, status: 'ACTIVE' as const, joined_at: '2026-01-01T00:00:00Z' },
+  { user_id: 'user-2', name: 'کارشناس', role: 'STAFF' as const, status: 'ACTIVE' as const, joined_at: '2026-01-02T00:00:00Z' },
 ];
 
 function mount(mode: 'users' | 'admins') {

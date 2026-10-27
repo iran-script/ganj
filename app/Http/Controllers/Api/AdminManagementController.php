@@ -19,6 +19,11 @@ class AdminManagementController extends Controller
         return $this->collection($request, $this->management->users($request->user(), $request->validated()), fn (User $user): array => $this->management->listProfile($user));
     }
 
+    public function createUser(AdminManagementRequest $request): JsonResponse
+    {
+        return response()->json(['data' => $this->management->createUser($request->user(), $request->validated())], 201)->header('Cache-Control', 'no-store');
+    }
+
     public function user(AdminManagementRequest $request, string $user_id): JsonResponse
     {
         return response()->json(['data' => $this->management->user($request->user(), $user_id)])->header('Cache-Control', 'no-store');
@@ -27,6 +32,30 @@ class AdminManagementController extends Controller
     public function setStatus(AdminManagementRequest $request, string $user_id): JsonResponse
     {
         return response()->json(['data' => $this->management->setStatus($request->user(), $user_id, $request->validated())])->header('Cache-Control', 'no-store');
+    }
+
+    public function updateUser(AdminManagementRequest $request, string $user_id): JsonResponse
+    {
+        return response()->json(['data' => $this->management->updateUser($request->user(), $user_id, $request->validated())])->header('Cache-Control', 'no-store');
+    }
+
+    public function resetPassword(AdminManagementRequest $request, string $user_id): Response
+    {
+        $this->management->resetPassword($request->user(), $user_id, $request->validated());
+
+        return response()->noContent()->header('Cache-Control', 'no-store');
+    }
+
+    public function deleteUser(AdminManagementRequest $request, string $user_id): Response
+    {
+        $this->management->deleteUser($request->user(), $user_id, $request->validated()['reason']);
+
+        return response()->noContent()->header('Cache-Control', 'no-store');
+    }
+
+    public function restoreUser(AdminManagementRequest $request, string $user_id): JsonResponse
+    {
+        return response()->json(['data' => $this->management->restoreUser($request->user(), $user_id, $request->validated()['reason'])])->header('Cache-Control', 'no-store');
     }
 
     public function administrators(AdminManagementRequest $request): JsonResponse
