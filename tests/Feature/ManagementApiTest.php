@@ -68,6 +68,61 @@ class ManagementApiTest extends TestCase
             ->assertJsonPath('meta.pagination.has_more', false);
     }
 
+    public function test_non_super_admin_cannot_use_user_mutation_endpoints(): void
+    {
+        $actor = $this->authenticate();
+        $target = User::factory()->create();
+        $payload = ['reason' => 'Unauthorized mutation'];
+
+        $this->withToken($this->bearerFor($actor))->postJson('/api/v1/admin/users', [
+            'name' => 'Denied', 'mobile' => '+989121234567', 'password' => 'secure-managed-password', ...$payload,
+        ])->assertForbidden();
+        $this->patchJson('/api/v1/admin/users/'.$target->public_id, ['name' => 'Denied', ...$payload])->assertForbidden();
+        $this->postJson('/api/v1/admin/users/'.$target->public_id.'/password', ['password' => 'another-secure-password', ...$payload])->assertForbidden();
+        $this->deleteJson('/api/v1/admin/users/'.$target->public_id, $payload)->assertForbidden();
+    }
+
+    public function test_super_admin_can_create_edit_reset_and_soft_delete_a_user(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $token = $this->bearerFor($admin);
+
+        $created = $this->withToken($token)->postJson('/api/v1/admin/users', [
+            'name' => 'Managed Account', 'email' => 'managed@nexo.test', 'mobile' => '+989121234567',
+            'password' => 'secure-managed-password', 'reason' => 'Provisioned for operations',
+        ])->assertCreated()->assertJsonPath('data.name', 'Managed Account');
+        $userId = $created->json('data.id');
+
+        $this->patchJson('/api/v1/admin/users/'.$userId, [
+            'name' => 'Updated Managed Account', 'reason' => 'Corrected account profile',
+        ])->assertOk()->assertJsonPath('data.name', 'Updated Managed Account');
+        $this->postJson('/api/v1/admin/users/'.$userId.'/password', [
+            'password' => 'another-secure-password', 'reason' => 'Credential rotation',
+        ])->assertNoContent();
+        $this->deleteJson('/api/v1/admin/users/'.$userId, ['reason' => 'Account no longer needed'])->assertNoContent();
+
+        $user = User::withTrashed()->where('public_id', $userId)->sole();
+        $this->assertNotNull($user->deleted_at);
+        $this->assertDatabaseHas('audit_events', ['action' => 'user.created', 'resource_id' => $userId]);
+        $this->assertDatabaseHas('audit_events', ['action' => 'user.updated', 'resource_id' => $userId]);
+        $this->assertDatabaseHas('audit_events', ['action' => 'user.password_reset', 'resource_id' => $userId]);
+        $this->assertDatabaseHas('audit_events', ['action' => 'user.deleted', 'resource_id' => $userId]);
+    }
+
+    public function test_last_active_super_admin_cannot_be_soft_deleted_and_deleted_users_can_be_restored(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $token = $this->bearerFor($admin);
+
+        $this->withToken($token)->deleteJson('/api/v1/admin/users/'.$admin->public_id, ['reason' => 'Attempt'])->assertConflict();
+        $target = User::factory()->create();
+        $this->deleteJson('/api/v1/admin/users/'.$target->public_id, ['reason' => 'Remove test account'])->assertNoContent();
+        $this->assertSoftDeleted('users', ['id' => $target->id]);
+        $this->postJson('/api/v1/admin/users/'.$target->public_id.'/restore', ['reason' => 'Restore test account'])
+            ->assertOk()->assertJsonPath('data.id', $target->public_id);
+        $this->assertDatabaseHas('users', ['id' => $target->id, 'deleted_at' => null]);
+    }
+
     public function test_account_status_requires_reason_revokes_tokens_and_is_audited(): void
     {
         $admin = $this->makeSuperAdmin();
@@ -143,6 +198,27 @@ class ManagementApiTest extends TestCase
         $this->patchJson('/api/v1/admin/organizations/'.$organization->public_id.'/members/'.$foreign->user->public_id.'/role', ['role' => 'ORGANIZATION_ADMIN', 'reason' => 'Cross tenant attempt'])
             ->assertNotFound();
         $this->assertDatabaseHas('audit_events', ['action' => 'organization.member_role_changed.v1', 'organization_id' => $organization->id, 'reason' => 'Operational assignment']);
+    }
+
+    public function test_super_admin_can_change_membership_status_without_changing_global_account_status(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = $this->makeSuperAdmin();
+        $target = User::factory()->create(['status' => 'ACTIVE']);
+        $member = OrganizationMember::factory()->create(['organization_id' => $organization->id, 'user_id' => $target->id, 'status' => 'ACTIVE']);
+        $token = $this->bearerFor($admin);
+
+        $this->withToken($token)->patchJson('/api/v1/admin/organizations/'.$organization->public_id.'/members/'.$target->public_id.'/status', [
+            'status' => 'SUSPENDED', 'reason' => 'Organization access review',
+        ])->assertOk()->assertJsonPath('data.status', 'SUSPENDED');
+        $this->assertSame('ACTIVE', $target->fresh()->status);
+        $this->assertDatabaseHas('organization_members', ['id' => $member->id, 'status' => 'SUSPENDED', 'left_at' => null]);
+        $this->assertDatabaseHas('audit_events', ['action' => 'organization.member_status_changed.v1', 'organization_id' => $organization->id, 'reason' => 'Organization access review']);
+
+        $this->patchJson('/api/v1/admin/organizations/'.$organization->public_id.'/members/'.$target->public_id.'/status', [
+            'status' => 'ACTIVE', 'reason' => 'Organization access restored',
+        ])->assertOk()->assertJsonPath('data.status', 'ACTIVE');
+        $this->assertSame('ACTIVE', $target->fresh()->status);
     }
 
     public function test_player_visibility_is_scoped_to_organization_and_details_keep_history_read_only(): void

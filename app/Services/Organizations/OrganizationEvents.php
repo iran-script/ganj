@@ -11,7 +11,7 @@ use Illuminate\Support\Str;
 
 class OrganizationEvents
 {
-    public const TYPES = ['organization.created.v1', 'organization.updated.v1', 'organization.archived.v1', 'organization.member_added.v1', 'organization.member_role_changed.v1', 'organization.member_removed.v1'];
+    public const TYPES = ['organization.created.v1', 'organization.updated.v1', 'organization.archived.v1', 'organization.member_added.v1', 'organization.member_role_changed.v1', 'organization.member_removed.v1', 'organization.member_status_changed.v1'];
 
     public function __construct(private OutboxService $outbox, private AuditService $audit) {}
 

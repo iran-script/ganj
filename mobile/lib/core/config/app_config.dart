@@ -4,7 +4,12 @@ class AppConfig {
   const AppConfig._();
 
   static const developmentTestApiBaseUrl = 'http://2.188.205.35:18100/api/v1';
-
+  static const testApiHost = '2.188.205.35';
+  static const testApiPort = 18100;
+  static const testHttpEnabled = bool.fromEnvironment(
+    'ALLOW_TEST_HTTP',
+    defaultValue: false,
+  );
   static const apiBuildVariant = String.fromEnvironment(
     'API_BUILD_VARIANT',
     defaultValue: kDebugMode ? 'test' : 'production',
@@ -52,10 +57,12 @@ class AppConfig {
       return false;
     }
     if (uri.scheme == 'https') return true;
-    return apiBuildVariant == 'test' &&
+    return (kDebugMode || testHttpEnabled) &&
         uri.scheme == 'http' &&
-        uri.host == '2.188.205.35' &&
-        uri.port == 18100 &&
-        uri.path == '/api/v1';
+        (const {'10.0.2.2', '127.0.0.1', 'localhost'}.contains(uri.host) ||
+            (apiBuildVariant == 'test' &&
+                uri.host == testApiHost &&
+                uri.port == testApiPort &&
+                uri.path == '/api/v1'));
   }
 }

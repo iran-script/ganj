@@ -71,9 +71,8 @@ class ApiClient {
     final diagnosticEndpoint = _safeDiagnosticEndpoint(path);
     final authDiagnostic =
         path == '/auth/login' || path == '/auth/register' || path == '/me';
-    final baseUri = Uri.tryParse(AppConfig.apiBaseUrl);
-    if (baseUri == null ||
-        !AppConfig.isAllowedApiBaseUrl(AppConfig.apiBaseUrl)) {
+    final baseUri = _validatedBaseUri();
+    if (baseUri == null) {
       if (kDebugMode && diagnosticRequest) {
         debugPrint(
             'NEXO $method request failed endpoint=$diagnosticEndpoint code=INSECURE_ENDPOINT kind=insecure_or_invalid_endpoint exception=ApiError');
@@ -247,7 +246,6 @@ class ApiClient {
   Future<void> saveToken(String token) => _store.write(_tokenKey, token);
 
   Future<Uint8List> downloadMedia(String path, {String? expectedMime}) async {
-    final baseUri = _validatedApiBaseUri();
     final generation = OfflineIdentity.instance.generation;
     final accessToken = await token();
     final headers = <String, String>{
@@ -259,6 +257,10 @@ class ApiClient {
     }
     final client = _client ?? http.Client();
     try {
+      final baseUri = _validatedBaseUri();
+      if (baseUri == null) {
+        throw const ApiError(code: 'INSECURE_ENDPOINT', message: '');
+      }
       final request =
           http.Request('GET', baseUri.replace(path: '${baseUri.path}$path'))
             ..headers.addAll(headers);
@@ -303,7 +305,10 @@ class ApiClient {
       throw const ApiError(
           code: 'VALIDATION_FAILED', message: 'Invalid evidence size.');
     }
-    final baseUri = _validatedApiBaseUri();
+    final baseUri = _validatedBaseUri();
+    if (baseUri == null) {
+      throw const ApiError(code: 'INSECURE_ENDPOINT', message: '');
+    }
     final generation = OfflineIdentity.instance.generation;
     final request = http.MultipartRequest('POST',
         baseUri.replace(path: '${baseUri.path}/runtime/nodes/$nodeId/evidence'))
@@ -349,10 +354,10 @@ class ApiClient {
 
   Future<String> deviceId() => _device.getOrCreate();
 
-  Uri _validatedApiBaseUri() {
+  static Uri? _validatedBaseUri() {
     final uri = Uri.tryParse(AppConfig.apiBaseUrl);
     if (uri == null || !AppConfig.isAllowedApiBaseUrl(AppConfig.apiBaseUrl)) {
-      throw const ApiError(code: 'INSECURE_ENDPOINT', message: '');
+      return null;
     }
     return uri;
   }

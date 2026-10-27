@@ -23,9 +23,10 @@ class OrganizationInput
             'addMember' => ['user_id' => ['required', 'uuid'], 'role' => ['required', Rule::enum(OrganizationRole::class)], 'reason' => $reason],
             'removeMember' => ['reason' => $reason],
             'changeRole' => ['role' => ['required', Rule::enum(OrganizationRole::class)], 'reason' => ['required', 'string', 'max:1000']],
+            'setMemberStatus' => ['status' => ['required', Rule::in(['ACTIVE', 'SUSPENDED'])], 'reason' => ['required', 'string', 'min:3', 'max:1000']],
             'archive' => ['reason' => ['required', 'string', 'max:1000']],
             'index' => ['limit' => ['sometimes', 'integer', 'min:1', 'max:100'], 'cursor' => ['sometimes', 'nullable', 'string', 'max:512']],
-            'members' => ['limit' => ['sometimes', 'integer', 'min:1', 'max:100'], 'cursor' => ['sometimes', 'nullable', 'string', 'max:512'], 'q' => ['sometimes', 'nullable', 'string', 'max:255'], 'role' => ['sometimes', 'string', 'regex:/^(ORGANIZATION_ADMIN|GAMEMASTER|STAFF)(,(ORGANIZATION_ADMIN|GAMEMASTER|STAFF))*$/']],
+            'members' => ['limit' => ['sometimes', 'integer', 'min:1', 'max:100'], 'cursor' => ['sometimes', 'nullable', 'string', 'max:512'], 'q' => ['sometimes', 'nullable', 'string', 'max:255'], 'role' => ['sometimes', 'string', 'regex:/^(ORGANIZATION_ADMIN|GAMEMASTER|STAFF)(,(ORGANIZATION_ADMIN|GAMEMASTER|STAFF))*$/'], 'status' => ['sometimes', 'string', 'regex:/^(ACTIVE|SUSPENDED|LEFT|REMOVED)(,(ACTIVE|SUSPENDED|LEFT|REMOVED))*$/']],
             default => [],
         };
     }

@@ -66,6 +66,11 @@ class OrganizationController extends Controller
         return response()->noContent()->header('Cache-Control', 'no-store');
     }
 
+    public function adminSetMemberStatus(OrganizationRequest $request, string $organization_id, string $user_id): JsonResponse
+    {
+        return response()->json(['data' => $this->organizations->setMemberStatus($request->user(), $organization_id, $user_id, $request->validated())->publicProfile()])->header('Cache-Control', 'no-store');
+    }
+
     public function removeMember(OrganizationRequest $request, string $organization_id, string $user_id): Response
     {
         $this->organizations->removeMember($request->user(), $organization_id, $user_id, $request->validated());

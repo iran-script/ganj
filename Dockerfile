@@ -27,7 +27,7 @@ ENV NODE_OPTIONS=--max-old-space-size=512
 COPY control-center/package.json control-center/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY control-center/ ./
-RUN npm run build
+RUN rm -f .env.local .env.*.local && NEXT_PUBLIC_API_BASE_URL=/api/v1 npm run build
 
 FROM node:22-alpine AS production-control
 WORKDIR /app

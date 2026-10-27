@@ -33,6 +33,7 @@ class OrganizationRequest extends FormRequest
         return match ($this->route()->getActionMethod()) {
             'adminAddMember' => OrganizationInput::rules('addMember') + ['reason' => ['required', 'string', 'min:3', 'max:1000']],
             'adminRemoveMember' => ['reason' => ['required', 'string', 'min:3', 'max:1000']],
+            'adminSetMemberStatus' => ['status' => ['required', 'in:ACTIVE,SUSPENDED'], 'reason' => ['required', 'string', 'min:3', 'max:1000']],
             'changeMemberRole' => OrganizationInput::rules('changeRole'),
             default => OrganizationInput::rules($this->route()->getActionMethod()),
         };
@@ -43,7 +44,7 @@ class OrganizationRequest extends FormRequest
         return [function (Validator $validator): void {
             if ($validator->errors()->isEmpty()) {
                 $action = match ($this->route()->getActionMethod()) {
-                    'adminAddMember' => 'addMember', 'adminRemoveMember' => 'removeMember', 'changeMemberRole' => 'changeRole', default => $this->route()->getActionMethod(),
+                    'adminAddMember' => 'addMember', 'adminRemoveMember' => 'removeMember', 'adminSetMemberStatus' => 'setMemberStatus', 'changeMemberRole' => 'changeRole', default => $this->route()->getActionMethod(),
                 };
                 OrganizationInput::validate($this->all(), $action);
             }

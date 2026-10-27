@@ -19,6 +19,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Pagination\CursorPaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -54,6 +55,28 @@ class ManagementService
         $query->orderBy('public_id');
 
         return $query->cursorPaginate($input['limit'] ?? 25, ['*'], 'cursor', $input['cursor'] ?? null);
+    }
+
+    public function createUser(User $actor, array $input): array
+    {
+        return DB::transaction(function () use ($actor, $input): array {
+            $lockedActor = User::query()->whereKey($actor->id)->lockForUpdate()->firstOrFail();
+            $lockedActor->ensureActive();
+            Gate::forUser($lockedActor)->authorize('admin.users.manage');
+            $this->validateIdentifiers($input);
+
+            $user = User::create([
+                'name' => $input['name'],
+                'email' => $input['email'] ?? null,
+                'mobile' => $input['mobile'] ?? null,
+                'password_hash' => Hash::make($input['password']),
+            ]);
+            $this->audit->record('user.created', 'user', $user->public_id, $input['reason'], [
+                'changed_fields' => ['name', 'email', 'mobile', 'password'],
+            ], $lockedActor->id);
+
+            return $this->userProfile($user->fresh());
+        }, 3);
     }
 
     public function user(User $actor, string $userId): array
@@ -104,6 +127,91 @@ class ManagementService
                     'before' => ['status' => $before], 'after' => ['status' => $target->status],
                 ], $lockedActor->id);
             }
+
+            return $this->userProfile($target->fresh());
+        }, 3);
+    }
+
+    public function updateUser(User $actor, string $userId, array $input): array
+    {
+        return DB::transaction(function () use ($actor, $userId, $input): array {
+            [$lockedActor, $target] = $this->lockActorAndTarget($actor, $userId);
+            $lockedActor->ensureActive();
+            Gate::forUser($lockedActor)->authorize('admin.users.manage');
+            $this->validateIdentifiers(array_replace(['email' => $target->email, 'mobile' => $target->mobile], $input), $target);
+
+            $fields = array_intersect_key($input, array_flip(['name', 'email', 'mobile']));
+            $before = $target->only(array_keys($fields));
+            $target->fill($fields);
+            if ($target->isDirty()) {
+                $target->save();
+                $this->audit->record('user.updated', 'user', $target->public_id, $input['reason'], [
+                    'changed_fields' => array_keys(array_diff_assoc($target->only(array_keys($fields)), $before)),
+                ], $lockedActor->id);
+            }
+
+            return $this->userProfile($target->fresh());
+        }, 3);
+    }
+
+    public function resetPassword(User $actor, string $userId, array $input): void
+    {
+        DB::transaction(function () use ($actor, $userId, $input): void {
+            [$lockedActor, $target] = $this->lockActorAndTarget($actor, $userId);
+            $lockedActor->ensureActive();
+            Gate::forUser($lockedActor)->authorize('admin.users.manage');
+            if ($lockedActor->is($target)) {
+                throw new ApiException('ACTION_NOT_ALLOWED', 'Administrators cannot reset their own password through user management.', [], 409);
+            }
+
+            $target->forceFill(['password_hash' => Hash::make($input['password'])])->save();
+            $target->tokens()->delete();
+            $this->audit->record('user.password_reset', 'user', $target->public_id, $input['reason'], [], $lockedActor->id);
+        }, 3);
+    }
+
+    public function deleteUser(User $actor, string $userId, string $reason): void
+    {
+        DB::transaction(function () use ($actor, $userId, $reason): void {
+            DB::statement('LOCK TABLE role_assignments IN SHARE ROW EXCLUSIVE MODE');
+            [$lockedActor, $target] = $this->lockActorAndTarget($actor, $userId);
+            $lockedActor->ensureActive();
+            Gate::forUser($lockedActor)->authorize('admin.users.manage');
+            if ($lockedActor->is($target)) {
+                throw new ApiException('ACTION_NOT_ALLOWED', 'Administrators cannot delete their own account.', [], 409);
+            }
+
+            $isActiveSuperAdmin = $target->status === UserStatus::Active->value && $this->activeGlobalRole($target->id);
+            if ($isActiveSuperAdmin && $this->activeSuperAdminCount() <= 1) {
+                throw new ApiException('ACTION_NOT_ALLOWED', 'The last active SUPER_ADMIN cannot be deleted.', [], 409);
+            }
+
+            if ($isActiveSuperAdmin) {
+                $target->globalRoleAssignments()->where('role_code', RoleAssignment::SUPER_ADMIN)->whereNull('organization_id')
+                    ->whereNull('resource_type')->whereNull('resource_id')->whereNull('revoked_at')->each(function (RoleAssignment $assignment) use ($target, $lockedActor, $reason): void {
+                        $assignment->forceFill(['revoked_at' => now()])->save();
+                        $this->audit->record('role_assignment.revoked', 'user', $target->public_id, $reason, ['role_code' => RoleAssignment::SUPER_ADMIN, 'scope' => 'GLOBAL'], $lockedActor->id);
+                    });
+            }
+            $target->tokens()->delete();
+            $target->delete();
+            $this->audit->record('user.deleted', 'user', $target->public_id, $reason, ['soft_deleted' => true], $lockedActor->id);
+        }, 3);
+    }
+
+    public function restoreUser(User $actor, string $userId, string $reason): array
+    {
+        return DB::transaction(function () use ($actor, $userId, $reason): array {
+            $lockedActor = User::query()->whereKey($actor->id)->lockForUpdate()->firstOrFail();
+            $lockedActor->ensureActive();
+            Gate::forUser($lockedActor)->authorize('admin.users.manage');
+            $target = User::withTrashed()->where('public_id', $userId)->lockForUpdate()->first() ?? throw $this->organizations->notFound();
+            if (! $target->trashed()) {
+                return $this->userProfile($target);
+            }
+
+            $target->restore();
+            $this->audit->record('user.restored', 'user', $target->public_id, $reason, [], $lockedActor->id);
 
             return $this->userProfile($target->fresh());
         }, 3);
@@ -192,6 +300,7 @@ class ManagementService
 
         return [
             'user' => $this->playerSafeProfile($actor, $user),
+            'audit' => $this->organizations->isSuperAdmin($actor) ? $this->auditHistory($user) : [],
             'team_memberships' => $user->relationLoaded('teamMemberships') ? $user->teamMemberships->map(fn (TeamMember $member): array => [
                 'team_id' => $member->team->public_id, 'team_name' => $member->team->name,
                 'organization' => $member->team->organization ? ['id' => $member->team->organization->public_id, 'name' => $member->team->organization->name] : null,
@@ -218,7 +327,7 @@ class ManagementService
         $isSuper = in_array(RoleAssignment::SUPER_ADMIN, $global, true);
         $capabilities = [];
         if ($isSuper) {
-            $capabilities = ['admin.users.view', 'admin.users.status', 'admin.admins.manage', 'admin.players.view', 'admin.roles.view'];
+            $capabilities = ['admin.users.view', 'admin.users.manage', 'admin.users.status', 'admin.admins.manage', 'admin.players.view', 'admin.roles.view'];
         } else {
             foreach ($memberships as $membership) {
                 if ($membership->role === OrganizationRole::OrganizationAdmin->value) {
@@ -334,7 +443,7 @@ class ManagementService
     {
         return ['id' => $user->public_id, 'name' => $user->name, 'email' => $user->email, 'mobile' => $user->mobile,
             'status' => $user->status, 'last_login_at' => $user->last_login_at?->toISOString(),
-            'created_at' => $user->created_at?->toISOString(), 'updated_at' => $user->updated_at?->toISOString()];
+            'created_at' => $user->created_at?->toISOString(), 'updated_at' => $user->updated_at?->toISOString(), 'deleted_at' => $user->deleted_at?->toISOString()];
     }
 
     private function auditHistory(User $user): array
@@ -402,6 +511,40 @@ class ManagementService
     private function findUser(string $userId): User
     {
         return Str::isUuid($userId) ? User::query()->where('public_id', $userId)->first() ?? throw $this->organizations->notFound() : throw $this->organizations->notFound();
+    }
+
+    /** @return array{0: User, 1: User} */
+    private function lockActorAndTarget(User $actor, string $userId): array
+    {
+        if (! Str::isUuid($userId)) {
+            throw $this->organizations->notFound();
+        }
+
+        $users = User::query()->whereIn('public_id', [$actor->public_id, $userId])->orderBy('id')->lockForUpdate()->get();
+        $lockedActor = $users->firstWhere('id', $actor->id);
+        $target = $users->firstWhere('public_id', $userId);
+        if (! $lockedActor || ! $target) {
+            throw $this->organizations->notFound();
+        }
+
+        return [$lockedActor, $target];
+    }
+
+    private function validateIdentifiers(array $input, ?User $user = null): void
+    {
+        if (empty($input['email']) && empty($input['mobile'])) {
+            throw ValidationException::withMessages(['identity' => ['At least one login identifier is required.']]);
+        }
+        foreach (['email', 'mobile'] as $field) {
+            if (empty($input[$field])) {
+                continue;
+            }
+            $query = User::withTrashed()->when($user, fn (Builder $users) => $users->where('id', '!=', $user->id));
+            $field === 'email' ? $query->whereRaw('lower(email) = ?', [mb_strtolower($input[$field])]) : $query->where($field, $input[$field]);
+            if ($query->exists()) {
+                throw ValidationException::withMessages([$field => ['This login identifier is already registered.']]);
+            }
+        }
     }
 
     private function activeGlobalRole(int $userId): bool
