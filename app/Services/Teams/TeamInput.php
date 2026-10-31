@@ -20,7 +20,8 @@ class TeamInput
             'join' => ['invite_code' => ['required', 'string', 'max:256']],
             'transfer' => ['user_id' => ['required', 'uuid'], 'reason' => $reason],
             'archive', 'remove', 'revokeInvite' => ['reason' => $reason],
-            'index', 'invites' => ['limit' => ['sometimes', 'integer', 'min:1', 'max:100'], 'cursor' => ['sometimes', 'nullable', 'string', 'max:512']],
+            'index' => ['limit' => ['sometimes', 'integer', 'min:1', 'max:100'], 'cursor' => ['sometimes', 'nullable', 'string', 'max:512'], 'q' => ['sometimes', 'nullable', 'string', 'max:255'], 'status' => ['sometimes', 'string', 'in:ACTIVE,ARCHIVED']],
+            'invites' => ['limit' => ['sometimes', 'integer', 'min:1', 'max:100'], 'cursor' => ['sometimes', 'nullable', 'string', 'max:512']],
             default => [],
         };
     }

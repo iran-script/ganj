@@ -29,7 +29,19 @@ class TeamService
     {
         $input = TeamInput::validate($input, 'index');
 
-        return $this->scope->teams($actor)->with(['captain', 'organization', 'activeMembers.user'])->orderBy('public_id')
+        $query = $this->scope->teams($actor)->with(['captain', 'organization', 'activeMembers.user']);
+        if (! empty($input['q'])) {
+            $needle = '%'.str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], trim($input['q'])).'%';
+            $query->where(function (Builder $teams) use ($needle): void {
+                $teams->whereRaw('lower(name) LIKE lower(?)', [$needle])
+                    ->orWhereHas('captain', fn (Builder $captain): Builder => $captain->whereRaw('lower(name) LIKE lower(?)', [$needle]));
+            });
+        }
+        if (! empty($input['status'])) {
+            $query->where('status', $input['status']);
+        }
+
+        return $query->orderBy('public_id')
             ->cursorPaginate($input['limit'] ?? 25, ['*'], 'cursor', $input['cursor'] ?? null);
     }
 

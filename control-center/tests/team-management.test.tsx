@@ -8,7 +8,7 @@ import { teamManagementApi } from '@/lib/team-management-api';
 
 vi.mock('next/navigation', () => ({ useParams: () => ({ id: 'team-1' }) }));
 vi.mock('@/lib/api-client', () => ({ api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() } }));
-vi.mock('@/lib/team-management-api', () => ({ teamManagementApi: { list: vi.fn(), show: vi.fn() } }));
+vi.mock('@/lib/team-management-api', () => ({ teamManagementApi: { list: vi.fn(), show: vi.fn(), invites: vi.fn(), revokeInvite: vi.fn() } }));
 vi.mock('@/lib/queries', () => ({
   queries: {
     me: () => ({ queryKey: ['me'], queryFn: async () => ({ id: 'captain-1', name: 'کاپیتان', status: 'ACTIVE' }) }),
@@ -35,6 +35,8 @@ describe('team management screens', () => {
     vi.resetAllMocks();
     vi.mocked(teamManagementApi.list).mockResolvedValue({ data: [team], meta: { pagination: { has_more: true, next_cursor: 'next' } } });
     vi.mocked(teamManagementApi.show).mockResolvedValue(team);
+    vi.mocked(teamManagementApi.invites).mockResolvedValue({ data: [], meta: { pagination: { has_more: false } } });
+    vi.mocked(teamManagementApi.revokeInvite).mockResolvedValue(undefined);
     vi.mocked(api.patch).mockResolvedValue(team);
     vi.mocked(api.post).mockResolvedValue({ invite_code: 'once-only-code' });
     vi.mocked(api.delete).mockResolvedValue(null);
@@ -46,7 +48,7 @@ describe('team management screens', () => {
     mount(<TeamManagementPage />);
     expect(await screen.findByText('تیم سپهر')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /صفحهٔ بعد/ }));
-    await waitFor(() => expect(teamManagementApi.list).toHaveBeenCalledWith('next'));
+    await waitFor(() => expect(teamManagementApi.list).toHaveBeenCalledWith('next', { q: '', status: undefined }));
   });
 
   it('renders an API failure state with retry', async () => {
