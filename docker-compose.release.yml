@@ -15,15 +15,12 @@ services:
     image: ${NEXO_APP_IMAGE:?Set immutable Backend image reference}
     labels:
       org.opencontainers.image.revision: ${NEXO_RELEASE_ID:?Set immutable release ID}
-    build:
-      context: .
-      target: production
     env_file:
       - ${NEXO_APP_ENV_FILE:?Set path to protected Laravel runtime env file}
     environment:
       APP_ENV: production
       APP_DEBUG: "false"
-      APP_URL: https://${NEXO_DOMAIN:?Set verified production domain}
+      APP_URL: ${NEXO_API_PUBLIC_URL:?Set the current Flutter API origin}
       DB_CONNECTION: pgsql
       DB_HOST: nexo-postgres
       DB_PORT: "5432"
@@ -37,6 +34,7 @@ services:
         aliases: [nexo-release-app]
     mem_limit: 192m
     memswap_limit: 192m
+    cpus: 0.50
     healthcheck:
       test: [CMD, php, -r, "exit(@fsockopen('127.0.0.1', 9000) ? 0 : 1);"]
       interval: 30s
@@ -49,20 +47,20 @@ services:
     image: ${NEXO_CONTROL_IMAGE:?Set immutable Control Center image reference}
     labels:
       org.opencontainers.image.revision: ${NEXO_RELEASE_ID:?Set immutable release ID}
-    build:
-      context: .
-      target: production-control
     env_file:
       - ${NEXO_CONTROL_ENV_FILE:?Set path to protected Control Center env file}
     environment:
       NODE_ENV: production
-      CONTROL_CENTER_BACKEND_API_URL: http://nexo-release-app/api/v1
-      CONTROL_CENTER_ALLOWED_ORIGINS: https://${NEXO_DOMAIN:?Set verified production domain}
+      # The App container exposes PHP-FPM only. Requests must go through the
+      # Nginx FastCGI gateway; never send HTTP to port 9000.
+      CONTROL_CENTER_BACKEND_API_URL: http://edge:8080/api/v1
+      CONTROL_CENTER_ALLOWED_ORIGINS: ${NEXO_CONTROL_CENTER_URL:?Set the HTTPS management URL reachable through an SSH tunnel}
     networks:
       nexo:
         aliases: [nexo-release-control]
     mem_limit: 256m
     memswap_limit: 256m
+    cpus: 0.50
     healthcheck:
       test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/login').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 30s
@@ -75,14 +73,12 @@ services:
     image: ${NEXO_NGINX_IMAGE:?Set immutable Nginx image reference}
     labels:
       org.opencontainers.image.revision: ${NEXO_RELEASE_ID:?Set immutable release ID}
-    build:
-      context: .
-      target: production-nginx-release
     environment:
       NEXO_DOMAIN: ${NEXO_DOMAIN:?Set verified production domain}
+      NEXO_API_HOST: ${NEXO_API_HOST:?Set current API host including :18100}
     ports:
-      - "${NEXO_HTTP_BIND_IP:-0.0.0.0}:80:80"
-      - "${NEXO_HTTPS_BIND_IP:-0.0.0.0}:443:443"
+      - "${NEXO_API_BIND_IP:-0.0.0.0}:18100:80"
+      - "127.0.0.1:18101:443"
     volumes:
       - ${NEXO_TLS_DIR:?Set mounted directory containing valid fullchain.pem and privkey.pem}:/run/nexo-tls:ro
     depends_on:
@@ -90,11 +86,80 @@ services:
       control: { condition: service_healthy }
     mem_limit: 32m
     memswap_limit: 32m
+    cpus: 0.10
     healthcheck:
-      test: [CMD, wget, -q, -O, /dev/null, "https://127.0.0.1/api/v1/ready", --no-check-certificate]
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1/api/v1/ready]
       interval: 30s
       timeout: 5s
       retries: 3
+
+  queue:
+    # Start background services explicitly after the currently active worker
+    # has been drained, to prevent duplicate consumers during a cutover.
+    profiles: [background]
+    <<: *release-service
+    image: ${NEXO_APP_IMAGE:?Set immutable Backend image reference}
+    labels:
+      org.opencontainers.image.revision: ${NEXO_RELEASE_ID:?Set immutable release ID}
+    env_file:
+      - ${NEXO_APP_ENV_FILE:?Set path to protected Laravel runtime env file}
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_URL: ${NEXO_API_PUBLIC_URL:?Set the current Flutter API origin}
+      DB_CONNECTION: pgsql
+      DB_HOST: nexo-postgres
+      DB_PORT: "5432"
+      DB_DATABASE: ${NEXO_DB_DATABASE:?Set verified production database name}
+      REDIS_HOST: nexo-redis
+      REDIS_PORT: "6379"
+      QUEUE_CONNECTION: redis
+    command: [php, artisan, queue:work, redis, --sleep=3, --tries=3, --backoff=5, --timeout=60, --memory=96, --max-time=3600, --no-interaction]
+    volumes:
+      - app_storage:/var/www/html/storage
+    mem_limit: 192m
+    memswap_limit: 192m
+    cpus: 0.50
+    stop_grace_period: 75s
+    healthcheck:
+      test: [CMD, php, -r, "exit(str_contains(file_get_contents('/proc/1/cmdline'), 'queue:work') ? 0 : 1);"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  scheduler:
+    profiles: [background]
+    <<: *release-service
+    image: ${NEXO_APP_IMAGE:?Set immutable Backend image reference}
+    labels:
+      org.opencontainers.image.revision: ${NEXO_RELEASE_ID:?Set immutable release ID}
+    env_file:
+      - ${NEXO_APP_ENV_FILE:?Set path to protected Laravel runtime env file}
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_URL: ${NEXO_API_PUBLIC_URL:?Set the current Flutter API origin}
+      DB_CONNECTION: pgsql
+      DB_HOST: nexo-postgres
+      DB_PORT: "5432"
+      DB_DATABASE: ${NEXO_DB_DATABASE:?Set verified production database name}
+      REDIS_HOST: nexo-redis
+      REDIS_PORT: "6379"
+      QUEUE_CONNECTION: redis
+    command: [php, artisan, schedule:work, --no-interaction]
+    volumes:
+      - app_storage:/var/www/html/storage
+    mem_limit: 128m
+    memswap_limit: 128m
+    cpus: 0.25
+    stop_grace_period: 75s
+    healthcheck:
+      test: [CMD, php, -r, "exit(str_contains(file_get_contents('/proc/1/cmdline'), 'schedule:work') ? 0 : 1);"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
 networks:
   nexo:

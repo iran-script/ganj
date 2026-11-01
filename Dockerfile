@@ -44,7 +44,7 @@ COPY public /var/www/html/public
 COPY docker/nginx-production.conf /etc/nginx/conf.d/default.conf
 
 FROM nginx:1.27-alpine AS production-nginx-release
-ENV NGINX_ENVSUBST_FILTER=^NEXO_DOMAIN$
+ENV NGINX_ENVSUBST_FILTER=^NEXO_(DOMAIN|API_HOST)$
 COPY docker/nginx-release.conf.template /etc/nginx/templates/default.conf.template
 
 FROM nginx:1.27-alpine AS production-nginx-rollback

@@ -129,7 +129,7 @@ void main() {
               'id': inviteId,
               'recipient': {'id': playerId, 'name': 'بازیکن آزمایشی'},
               'decision': 'PENDING',
-              'expires_at': '2026-11-01T12:00:00Z',
+              'expires_at': '2099-11-01T12:00:00Z',
               'revoked_at': null,
             }
           ]);
