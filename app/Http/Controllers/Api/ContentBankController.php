@@ -39,6 +39,22 @@ class ContentBankController extends Controller
         return response()->json(['data' => $this->location($item)])->header('Cache-Control', 'no-store');
     }
 
+    public function locationStages(Request $request): JsonResponse
+    {
+        $location = $this->locations->resolve($request->user(), $request->route('location_id'));
+        abort_unless($location->type === 'POINT', 404);
+        $stages = DB::table('scenario_nodes as nodes')->join('scenario_versions as versions', 'versions.id', '=', 'nodes.scenario_version_id')
+            ->join('scenarios', 'scenarios.id', '=', 'versions.scenario_id')
+            ->where('scenarios.organization_id', $location->organization_id)
+            ->where('nodes.config->checkpoint_id', $location->public_id)
+            ->orderBy('scenarios.title')->orderBy('versions.version_no')->orderBy('nodes.node_key')
+            ->get(['scenarios.public_id as scenario_id', 'scenarios.title as scenario_title', 'versions.public_id as version_id',
+                'versions.version_no', 'versions.status as version_status', 'nodes.node_key', 'nodes.node_type', 'nodes.title as stage_title'])
+            ->map(fn (object $stage): array => (array) $stage)->all();
+
+        return response()->json(['data' => $stages])->header('Cache-Control', 'no-store');
+    }
+
     public function saveLocation(Request $request): JsonResponse
     {
         $id = $request->route('location_id');

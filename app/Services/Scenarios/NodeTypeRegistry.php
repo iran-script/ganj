@@ -27,7 +27,7 @@ class NodeTypeRegistry
                 'min_accuracy' => 'sometimes|numeric|min:1|max:1000', 'required_player_count' => 'sometimes|integer|min:1|max:8',
                 'dwell_time' => 'sometimes|integer|min:0|max:86400'] + app(LocationInput::class)->policyRules(), []],
             'Checkpoint' => [['checkpoint_id' => 'required|uuid'], ['checkpoint']],
-            'QR' => [['trigger_id' => 'required|uuid', 'checkpoint_id' => 'sometimes|uuid',
+            'QR' => [['trigger_id' => 'required|uuid', 'checkpoint_id' => 'sometimes|uuid', 'radius_m' => 'sometimes|numeric|min:0.01|max:100000',
                 'role_policy' => 'sometimes|in:ANY_TEAM_MEMBER,ACTIVE_SLOT,SPECIFIC_ROLE,SPECIFIC_PLAYER',
                 'role_code' => 'required_if:role_policy,SPECIFIC_ROLE|in:SCANNER,NAVIGATOR,DECODER,AR_OPERATOR',
                 'specific_player_id' => 'required_if:role_policy,SPECIFIC_PLAYER|uuid',

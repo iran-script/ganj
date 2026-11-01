@@ -22,11 +22,13 @@ async function loadBank<T>(path: string, schema: z.ZodType<T>): Promise<T[]> {
 }
 
 export type LocationItem = { id: string; organization_id: string; name: string; latitude: number; longitude: number; default_radius_m: number; accuracy_m: number | null; dwell_seconds: number | null; category: string; description: string; status: string };
+export type LocationStageReference = { scenario_id: string; scenario_title: string; version_id: string; version_no: number; version_status: string; node_key: string; node_type: string; stage_title: string | null };
 export type QrItem = { id: string; organization_id: string; name: string; label: string; location_description: string; notes: string; status: string; usage_count: number; created_at?: string; updated_at?: string; printable_available?: boolean };
 export type MediaItem = { id: string; organization_id: string; name: string; kind: 'IMAGE' | 'AUDIO' | 'FILE'; mime_type: string; size_bytes: number; duration_seconds?: number };
 export type SubmissionItem = { id: string; session_id: string; team_id: string; player_id: string; node_id: string; node_title: string; type: string; status: string; asset: MediaItem; submitted_at: string; location_verified: boolean; review_message?: string };
 export const contentApi = {
   locations: () => loadBank('/content/locations', locationSchema),
+  locationStages: (id: string) => api.get<LocationStageReference[]>(`/content/locations/${encodeURIComponent(id)}/stages`),
   archiveLocation: (id: string, reason: string) => api.patch<LocationItem>(`/content/locations/${id}`, { status: 'ARCHIVED', reason }),
   qr: () => loadBank('/content/qr-bank', qrSchema),
   media: () => api.get<MediaItem[]>('/content/media'),

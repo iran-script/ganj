@@ -162,7 +162,7 @@ class InlineGpsScenarioTest extends TestCase
         $this->assertTrue($this->runtimeAction($player, $node, 'complete_node')['complete']);
     }
 
-    public function test_legacy_checkpoint_coordinates_are_normalized_into_the_published_graph(): void
+    public function test_checkpoint_location_remains_a_canonical_reference_in_the_published_graph(): void
     {
         [$admin, $scenario, $version] = $this->scenarioFixture(false);
         $checkpoint = Checkpoint::factory()->create(['organization_id' => $scenario->organization_id]);
@@ -172,9 +172,9 @@ class InlineGpsScenarioTest extends TestCase
 
         $this->assertSame('PASS', $saved['validation']['status']);
         $config = collect($saved['graph']['nodes'])->firstWhere('node_key', 'task')['config'];
-        $this->assertEqualsWithDelta(35.6892, $config['latitude'], 0.000001);
-        $this->assertEqualsWithDelta(51.389, $config['longitude'], 0.000001);
-        $this->assertSame(50.0, (float) $config['radius_m']);
+        $this->assertSame($checkpoint->public_id, $config['checkpoint_id']);
+        $this->assertArrayNotHasKey('latitude', $config);
+        $this->assertArrayNotHasKey('longitude', $config);
         $this->assertSame('PUBLISHED', $this->publishFixture($admin, $version->fresh())['status']);
     }
 

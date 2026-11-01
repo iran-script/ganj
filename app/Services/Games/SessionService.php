@@ -23,7 +23,7 @@ use Illuminate\Validation\ValidationException;
 
 class SessionService
 {
-    public function __construct(private GameScope $scope, private OrganizationScope $organizations, private GameEvents $events, private SessionRoster $roster, private SessionDependencies $dependencies, private IdempotencyStore $idempotency, private AuditService $audit) {}
+    public function __construct(private GameScope $scope, private OrganizationScope $organizations, private GameEvents $events, private SessionRoster $roster, private SessionDependencies $dependencies, private IdempotencyStore $idempotency, private AuditService $audit, private SessionCheckpointSnapshotService $checkpointSnapshots) {}
 
     /** Actor -> Organization -> Game -> Session -> Team -> roster accounts/devices. All domain writes share this boundary. */
     public function execute(User $actor, string $action, array $input = [], ?string $id = null, ?string $target = null, ?string $key = null, ?UserDevice $requestDevice = null): array
@@ -361,6 +361,8 @@ class SessionService
         $context = $this->roster->context($session, true);
         $billing = $this->dependencies->billingPass($session, $context, 'start');
         $assignments = $this->dependencies->assignments($session, $context);
+        $frozenAt = now()->startOfSecond();
+        $this->checkpointSnapshots->capture($session, $assignments, $frozenAt);
         $pricing = $this->dependencies->pricing->freeze($session, $context);
         if ($pricing === [] || ! is_string($billing['reference'] ?? null) || $billing['reference'] === '') {
             throw new ApiException('SESSION_BILLING_NOT_READY', 'Immutable billing/pricing references are required.', [], 409);
@@ -377,7 +379,6 @@ class SessionService
             unset($playerContext);
         }
         unset($teamContext);
-        $frozenAt = now()->startOfSecond();
         $frozen = [];
         foreach ($context as $team) {
             $registration = $session->teams()->whereHas('team', fn (Builder $q): Builder => $q->where('public_id', $team['team_id']))->firstOrFail();

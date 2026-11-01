@@ -39,8 +39,9 @@ class GraphValidator
             'edges' => 'present|array|list|max:5000', 'edges.*' => 'array:edge_key,from_node,to_node,priority,condition_group_id,metadata',
             'edges.*.edge_key' => 'required|string|regex:/^[A-Za-z][A-Za-z0-9_-]{0,99}$/',
             'edges.*.from_node' => 'required|string|max:100', 'edges.*.to_node' => 'required|string|max:100', 'edges.*.priority' => 'required|integer|min:0|max:2147483647',
-            'edges.*.condition_group_id' => 'sometimes|nullable|uuid', 'edges.*.metadata' => 'sometimes|array:outcome,label',
+            'edges.*.condition_group_id' => 'sometimes|nullable|uuid', 'edges.*.metadata' => 'sometimes|array:outcome,label,verification_order',
             'edges.*.metadata.outcome' => 'sometimes|in:SUCCESS,FAILURE,TIMEOUT,TRUE,FALSE,APPROVED,REJECTED', 'edges.*.metadata.label' => 'sometimes|string|max:100',
+            'edges.*.metadata.verification_order' => 'sometimes|in:GPS_THEN_QR',
             'variables' => 'sometimes|array|list|max:500', 'variables.*' => 'array:key,type,scope,default_value,writable',
             'variables.*.key' => 'required|string|regex:/^[A-Za-z][A-Za-z0-9_]{0,99}$/', 'variables.*.type' => 'required|string|in:STRING,INTEGER,DECIMAL,BOOLEAN,DATETIME,JSON',
             'variables.*.scope' => 'required|string|in:SCENARIO,TEAM,PLAYER,NODE', 'variables.*.default_value' => 'present', 'variables.*.writable' => 'required|boolean',
@@ -196,6 +197,16 @@ class GraphValidator
             }
             if (isset($edge['metadata']['outcome']) && (! in_array($edge['metadata']['outcome'], app(AuthoringNodeCatalog::class)->outcomes($nodes[$edge['from_node']]['node_type'], $nodes[$edge['from_node']]['config']), true) || isset($edge['condition_group_id']))) {
                 $add('INVALID_EDGE_OUTCOME', "edges.$i.metadata.outcome");
+            }
+            if (($edge['metadata']['verification_order'] ?? null) === 'GPS_THEN_QR') {
+                $source = $nodes[$edge['from_node']] ?? null;
+                $target = $nodes[$edge['to_node']] ?? null;
+                if (($source['node_type'] ?? null) !== 'GPS / Location' || ($target['node_type'] ?? null) !== 'QR'
+                    || ! isset($source['config']['checkpoint_id'])
+                    || ($source['config']['checkpoint_id'] ?? null) !== ($target['config']['checkpoint_id'] ?? null)
+                    || ($source['config']['radius_m'] ?? 20) !== ($target['config']['radius_m'] ?? 20)) {
+                    $add('INVALID_GPS_QR_STAGE', "edges.$i.metadata.verification_order");
+                }
             }
             $adjacency[$edge['from_node']][] = $edge['to_node'];
             $reverse[$edge['to_node']][] = $edge['from_node'];

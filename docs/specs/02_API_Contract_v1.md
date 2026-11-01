@@ -247,7 +247,7 @@ POST /api/v1/teams/{team\_id}/transfer-captaincy
 POST /api/v1/teams/{team\_id}/archive
 
 POST /api/v1/teams  
-Auth: Player  
+Auth: Player
 Request:  
 name  
 avatar\_media\_id optional  
@@ -257,7 +257,7 @@ captain
 eligibility
 
 POST /api/v1/teams/join  
-Auth: Player  
+Auth: Player
 Request:  
 invite\_code  
 Possible errors:  
@@ -364,7 +364,7 @@ POST /api/v1/locations/batch
 GET /api/v1/game-sessions/{session\_id}/players/me/location-policy
 
 POST /api/v1/locations  
-Auth: Player  
+Auth: Player
 Device Binding: Required during active game  
 Request:  
 session\_id  
@@ -392,13 +392,19 @@ PATCH /api/v1/checkpoints/{checkpoint\_id}
 Scenario/Admin scoped.
 
 24\. QR Endpoints  
+POST /api/v1/qr/proximity
+Auth: Player
+Device Binding: Required
+Request: session_id
+Checks the latest server-ingested GPS evaluation for the active QR stage and its frozen Location Bank checkpoint. Returns distance, accuracy, and check time only after a fresh, accurate INSIDE result. Client proximity flags are never trusted.
+
 POST /api/v1/qr/scan  
-Auth: Player  
-Device Binding: Required  
+Auth: Player
+Device Binding: Required
 Request:  
 session\_id  
 qr\_identifier  
-location optional if current location evidence not recent
+For QR stages linked to a checkpoint, a fresh server-side proximity evaluation is required at scan time.
 
 Response:  
 trigger\_type  

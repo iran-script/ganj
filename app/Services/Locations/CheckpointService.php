@@ -58,10 +58,15 @@ class CheckpointService
                         ->exists()) {
                     throw new ApiException('DEPENDENCY_ACTIVE', 'این موقعیت در نسخه منتشرشده سناریو استفاده می‌شود و قابل حذف یا بایگانی نیست.', [], 409);
                 }
-                if (DB::table('scenario_nodes')->join('scenario_versions', 'scenario_versions.id', '=', 'scenario_nodes.scenario_version_id')
-                    ->where('scenario_nodes.config->checkpoint_id', $checkpoint->public_id)->where('scenario_versions.status', '<>', 'DRAFT')->exists()
-                    && array_intersect(array_keys($input), ['type', 'geom', 'radius_meters', 'config'])) {
-                    throw new ApiException('CONFLICT', 'Published checkpoint geometry and verification policy are immutable; create a new checkpoint.', [], 409);
+                if (array_intersect(array_keys($input), ['type', 'geom', 'radius_meters', 'config', 'status'])
+                    && DB::table('game_session_teams as registrations')->join('game_sessions as sessions', 'sessions.id', '=', 'registrations.game_session_id')
+                        ->join('team_scenario_instances as instances', 'instances.game_session_team_id', '=', 'registrations.id')
+                        ->join('team_node_instances as runtime_nodes', 'runtime_nodes.team_scenario_instance_id', '=', 'instances.id')
+                        ->join('scenario_nodes as nodes', 'nodes.id', '=', 'runtime_nodes.scenario_node_id')
+                        ->whereIn('sessions.status', ['RUNNING', 'PAUSED'])->where('nodes.config->checkpoint_id', $checkpoint->public_id)
+                        ->whereNotExists(fn ($query) => $query->selectRaw('1')->from('game_session_checkpoint_snapshots as snapshots')
+                            ->whereColumn('snapshots.game_session_id', 'sessions.id')->where('snapshots.checkpoint_id', $checkpoint->id))->exists()) {
+                    throw new ApiException('CONFLICT', 'An active game still relies on an unsnapshotted location.', [], 409);
                 }
             }
             $config = $input['config'] ?? $checkpoint->config ?? [];

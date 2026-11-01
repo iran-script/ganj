@@ -91,4 +91,21 @@ class LocationDatabaseTest extends TestCase
         $latest = DB::table('player_latest_locations')->where('game_session_player_id', $player->id)->sole();
         $this->assertSame('UNCERTAIN', app(GeofenceVerifier::class)->classify($checkpoint, $latest, 30)['result']);
     }
+
+    public function test_running_session_uses_its_location_snapshot_after_bank_location_changes(): void
+    {
+        [, $session, , $player, , $checkpoint] = $this->locationFixture();
+        $snapshot = DB::table('game_session_checkpoint_snapshots')->where('game_session_id', $session->id)
+            ->where('checkpoint_id', $checkpoint->id)->sole();
+        $this->assertSame(50.0, (float) $snapshot->radius_meters);
+
+        $this->ingest($player, $this->sample($session));
+        $latest = DB::table('player_latest_locations')->where('game_session_player_id', $player->id)->sole();
+        $checkpoint->forceFill(['geom' => DB::raw('ST_SetSRID(ST_MakePoint(0,0),4326)'), 'radius_meters' => 1])->save();
+
+        $result = app(GeofenceVerifier::class)->classify($checkpoint, $latest, 30, $session->id);
+
+        $this->assertSame('INSIDE', $result['result']);
+        $this->assertLessThan(0.1, $result['distance_meters']);
+    }
 }

@@ -17,6 +17,12 @@ class QrController extends Controller
         return response()->json(['data' => $this->qr->scan($request->user(), $this->devices->fromRequest($request), $request->all(), $request->header('Idempotency-Key', ''))])->header('Cache-Control', 'no-store');
     }
 
+    public function proximity(Request $request): JsonResponse
+    {
+        return response()->json(['data' => $this->qr->verifyProximity($request->user(), $this->devices->fromRequest($request), $request->all())])
+            ->header('Cache-Control', 'no-store');
+    }
+
     public function create(Request $request): JsonResponse
     {
         return response()->json(['data' => $this->qr->create($request->user(), $request->all())], 201)->header('Cache-Control', 'no-store');

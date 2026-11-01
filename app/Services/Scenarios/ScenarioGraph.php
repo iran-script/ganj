@@ -3,7 +3,6 @@
 namespace App\Services\Scenarios;
 
 use App\Exceptions\ApiException;
-use App\Models\Checkpoint;
 use App\Models\ScenarioCondition;
 use App\Models\ScenarioEdge;
 use App\Models\ScenarioNode;
@@ -77,24 +76,6 @@ class ScenarioGraph
 
     public function normalize(array $graph, int $organizationId): array
     {
-        foreach ($graph['nodes'] as &$node) {
-            if (($node['node_type'] ?? null) !== 'GPS / Location' || ! isset($node['config']['checkpoint_id'])) {
-                continue;
-            }
-            if (isset($node['config']['latitude'], $node['config']['longitude'], $node['config']['radius_m'])) {
-                continue;
-            }
-            $checkpoint = Checkpoint::query()->where('organization_id', $organizationId)->where('public_id', $node['config']['checkpoint_id'])
-                ->where('status', 'ACTIVE')->where('type', 'POINT')
-                ->selectRaw('ST_X(geom) AS longitude, ST_Y(geom) AS latitude, radius_meters')->first();
-            if ($checkpoint) {
-                $node['config']['latitude'] ??= (float) $checkpoint->latitude;
-                $node['config']['longitude'] ??= (float) $checkpoint->longitude;
-                $node['config']['radius_m'] ??= (float) $checkpoint->radius_meters;
-            }
-        }
-        unset($node);
-
         return $graph;
     }
 

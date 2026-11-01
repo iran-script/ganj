@@ -149,6 +149,67 @@ void main() {
     expect(receivedTokens, ['server-token']);
     expect(find.byType(FilledButton), findsOneWidget);
   });
+
+  testWidgets(
+      'GPS protected QR scanner opens only after server proximity passes',
+      (tester) async {
+    final paths = <String>[];
+    final api = ApiClient(
+        store: _TestStore(),
+        client: MockClient((request) async {
+          paths.add(request.url.path);
+          final data = switch (request.url.path) {
+            '/api/v1/game-sessions/session/players/me/location-policy' => {
+                'active': true,
+                'min_accuracy': 100
+              },
+            '/api/v1/locations' => {'accepted': true},
+            '/api/v1/qr/proximity' => {
+                'inside': true,
+                'distance_meters': 4,
+                'accuracy_meters': 5
+              },
+            '/api/v1/qr/scan' => {
+                'accepted': true,
+                'one_time_token': 'server-token'
+              },
+            _ => <String, dynamic>{},
+          };
+          return http.Response(jsonEncode({'data': data}), 200);
+        }));
+    final received = <String>[];
+    await tester.pumpWidget(MaterialApp(
+      theme: NexoTheme.data,
+      home: QrScannerPage(
+        sessionId: 'session',
+        requireFreshLocation: true,
+        api: api,
+        locationGateway: _TestLocationGateway(),
+        onValue: (value) async => received.add(value),
+        scannerBuilder: (onDetected) => IconButton(
+          onPressed: () => onDetected('qr-payload'),
+          icon: const Icon(Icons.qr_code_scanner),
+        ),
+      ),
+    ));
+
+    expect(find.byType(IconButton), findsNothing);
+    await tester.tap(find.text('بررسی موقعیت و بازکردن دوربین'));
+    await tester.pumpAndSettle();
+    expect(find.byType(IconButton), findsOneWidget);
+    await tester.tap(find.byType(IconButton));
+    await tester.pumpAndSettle();
+    expect(paths, [
+      '/api/v1/game-sessions/session/players/me/location-policy',
+      '/api/v1/locations',
+      '/api/v1/qr/proximity',
+      '/api/v1/game-sessions/session/players/me/location-policy',
+      '/api/v1/locations',
+      '/api/v1/qr/proximity',
+      '/api/v1/qr/scan',
+    ]);
+    expect(received, ['server-token']);
+  });
 }
 
 class _TestLocationGateway implements LocationGateway {
@@ -167,7 +228,7 @@ class _TestLocationGateway implements LocationGateway {
   Future<Position> currentPosition() async => Position(
       longitude: 51.4,
       latitude: 35.7,
-      timestamp: DateTime.utc(2026),
+      timestamp: DateTime.now().toUtc(),
       accuracy: 50,
       altitude: 0,
       altitudeAccuracy: 0,

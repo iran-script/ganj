@@ -58,6 +58,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('/content/locations', [ContentBankController::class, 'locations'])->middleware(RequireControlCenterAccess::class);
         Route::post('/content/locations', [ContentBankController::class, 'saveLocation'])->middleware(RequireControlCenterAccess::class);
         Route::get('/content/locations/{location_id}', [ContentBankController::class, 'showLocation'])->middleware(RequireControlCenterAccess::class);
+        Route::get('/content/locations/{location_id}/stages', [ContentBankController::class, 'locationStages'])->middleware(RequireControlCenterAccess::class);
         Route::patch('/content/locations/{location_id}', [ContentBankController::class, 'saveLocation'])->middleware(RequireControlCenterAccess::class);
         Route::get('/content/qr-bank', [ContentBankController::class, 'qrIndex'])->middleware(RequireControlCenterAccess::class);
         Route::post('/content/qr-bank', [ContentBankController::class, 'qrSave'])->middleware(RequireControlCenterAccess::class);
@@ -83,6 +84,7 @@ Route::prefix('v1')->group(function (): void {
             Route::patch('/checkpoints/{checkpoint_id}', [CheckpointController::class, 'save'])->name('checkpoints.update');
         });
         Route::post('/qr/scan', [QrController::class, 'scan'])->middleware('throttle:qr-scan')->name('qr.scan');
+        Route::post('/qr/proximity', [QrController::class, 'proximity'])->middleware('throttle:qr-scan')->name('qr.proximity');
         Route::middleware(RequireControlCenterAccess::class)->group(function (): void {
             Route::get('/qr/triggers', [QrController::class, 'index'])->name('qr.triggers.index');
             Route::post('/qr/triggers', [QrController::class, 'create'])->name('qr.triggers.create');

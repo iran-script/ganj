@@ -53,6 +53,7 @@ class NodeRenderer extends StatelessWidget {
                   MaterialPageRoute(
                       builder: (_) => QrScannerPage(
                           sessionId: sessionId,
+                          requireFreshLocation: config['requires_gps'] == true,
                           onValue: (value) =>
                               onSubmit({'qr_token': value}))))));
     }

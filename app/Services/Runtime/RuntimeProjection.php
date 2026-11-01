@@ -9,6 +9,7 @@ use App\Models\RuntimeEvent;
 use App\Models\RuntimeTimer;
 use App\Models\TeamNodeInstance;
 use App\Models\TeamScenarioInstance;
+use Illuminate\Support\Facades\DB;
 
 class RuntimeProjection
 {
@@ -21,9 +22,19 @@ class RuntimeProjection
         $players = $instance->registration->players()->get()->keyBy('id');
         $roles = PlayerRoleAssignment::where('team_scenario_instance_id', $instance->id)->whereNull('released_at')->get();
         $checkpoints = Checkpoint::where('organization_id', $instance->session->organization_id)
-            ->whereIn('public_id', $nodes->filter(fn (TeamNodeInstance $node): bool => in_array($node->node->node_type, ['GPS / Location', 'Checkpoint'], true))
+            ->whereIn('public_id', $nodes->filter(fn (TeamNodeInstance $node): bool => in_array($node->node->node_type, ['GPS / Location', 'Checkpoint', 'QR'], true) && isset($node->node->config['checkpoint_id']))
                 ->map(fn (TeamNodeInstance $node): ?string => $node->node->config['checkpoint_id'] ?? null)->filter())
             ->selectRaw('public_id,name,type,radius_meters,ST_AsGeoJSON(geom) AS geojson')->get()->keyBy('public_id')->all();
+        $locationSnapshots = DB::table('game_session_checkpoint_snapshots as snapshots')
+            ->join('checkpoints', 'checkpoints.id', '=', 'snapshots.checkpoint_id')
+            ->where('snapshots.game_session_id', $instance->game_session_id)
+            ->selectRaw('checkpoints.public_id,snapshots.radius_meters,ST_AsGeoJSON(snapshots.geom) AS geojson')->get();
+        foreach ($locationSnapshots as $snapshot) {
+            if (isset($checkpoints[$snapshot->public_id])) {
+                $checkpoints[$snapshot->public_id]->radius_meters = $snapshot->radius_meters;
+                $checkpoints[$snapshot->public_id]->geojson = $snapshot->geojson;
+            }
+        }
 
         return ['id' => $instance->public_id, 'session_id' => $instance->session->public_id, 'team_id' => $instance->registration->team->public_id,
             'scenario_version_id' => $instance->version->public_id, 'status' => $instance->status,
@@ -47,8 +58,8 @@ class RuntimeProjection
     {
         $config = $node->node->config;
         $safe = $this->policy->config($node, $player);
-        if ($node->status !== 'LOCKED' && in_array($node->node->node_type, ['GPS / Location', 'Checkpoint'], true)) {
-            if ($node->node->node_type === 'GPS / Location' && isset($config['latitude'], $config['longitude'], $config['radius_m'])) {
+        if ($node->status !== 'LOCKED' && in_array($node->node->node_type, ['GPS / Location', 'Checkpoint', 'QR'], true)) {
+            if ($node->node->node_type === 'GPS / Location' && ! isset($config['checkpoint_id']) && isset($config['latitude'], $config['longitude'], $config['radius_m'])) {
                 $safe['gps'] = ['latitude' => $config['latitude'], 'longitude' => $config['longitude'], 'radius_m' => $config['radius_m'],
                     'accuracy_m' => $config['accuracy_m'] ?? null, 'dwell_seconds' => $config['dwell_seconds'] ?? 0];
             }
@@ -57,7 +68,10 @@ class RuntimeProjection
                     ->selectRaw('public_id,name,type,radius_meters,ST_AsGeoJSON(geom) AS geojson')->first()) : null;
             if ($checkpoint && ! isset($safe['gps'])) {
                 $safe['checkpoint'] = ['id' => $checkpoint->public_id, 'name' => $checkpoint->name, 'type' => $checkpoint->type,
-                    'geom' => json_decode($checkpoint->geojson, true), 'radius_meters' => json_decode(json_encode($checkpoint->radius_meters, JSON_THROW_ON_ERROR), true, flags: JSON_THROW_ON_ERROR)];
+                    'geom' => json_decode($checkpoint->geojson, true), 'radius_meters' => json_decode(json_encode($config['radius_m'] ?? $checkpoint->radius_meters, JSON_THROW_ON_ERROR), true, flags: JSON_THROW_ON_ERROR)];
+            }
+            if ($node->node->node_type === 'QR' && isset($config['checkpoint_id'])) {
+                $safe['requires_gps'] = true;
             }
         }
         if ($node->node->node_type === 'Give Hint') {

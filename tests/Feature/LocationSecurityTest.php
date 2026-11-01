@@ -88,10 +88,12 @@ class LocationSecurityTest extends TestCase
         $this->assertFalse($this->runtimeAction($player, $node, 'complete_node')['complete']);
     }
 
-    public function test_published_checkpoint_policy_is_immutable_and_foreign_reference_fails_validation(): void
+    public function test_published_checkpoint_updates_are_versioned_for_active_sessions_and_foreign_reference_fails_validation(): void
     {
-        [$admin, , , , , $checkpoint] = $this->locationFixture();
-        $this->assertDomainError('CONFLICT', fn () => app(CheckpointService::class)->save($admin, ['radius_meters' => 100], $checkpoint->public_id));
+        [$admin, $session, , , , $checkpoint] = $this->locationFixture();
+        $updated = app(CheckpointService::class)->save($admin, ['radius_meters' => 100], $checkpoint->public_id);
+        $this->assertSame(100.0, (float) $updated['radius_meters']);
+        $this->assertSame(50.0, (float) DB::table('game_session_checkpoint_snapshots')->where('game_session_id', $session->id)->where('checkpoint_id', $checkpoint->id)->value('radius_meters'));
         $foreign = Checkpoint::factory()->create();
         $graph = $this->runtimeGraph('GPS / Location', ['checkpoint_id' => $foreign->public_id, 'min_accuracy' => 10, 'required_player_count' => 1, 'dwell_time' => 0]);
         $this->assertSame('FAIL', app(GraphValidator::class)->validate($graph, $checkpoint->organization_id)['status']);

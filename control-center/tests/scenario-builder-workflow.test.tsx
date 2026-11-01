@@ -35,23 +35,42 @@ beforeEach(() => {
   vi.mocked(scenarioApi.simulate).mockResolvedValue({ ...validation, mode: 'STRUCTURAL_ONLY', runtime_executed: false, revision_token: 'saved-revision', reachable_nodes: [], branches: [], dead_ends: [] });
 });
 afterEach(cleanup);
-it('selects an active Point checkpoint and persists its verified reference', async () => { vi.mocked(queries.checkpoints).mockReturnValue({ queryKey: ['checkpoints'], queryFn: async () => [{ id: 'checkpoint', organization_id: 'org', name: 'North Point', type: 'POINT', geom: { type: 'Point', coordinates: [51.4, 35.7] }, radius_meters: 40, status: 'ACTIVE' }] } as never); mountBuilder(); await userEvent.click(await screen.findByRole('button', { name: 'select gps' })); const picker = await screen.findByRole('combobox', { name: /Checkpoint/ }); await userEvent.selectOptions(picker, 'checkpoint'); await userEvent.click(screen.getAllByRole('button', { name: /اعمال/ })[0]); await userEvent.click(screen.getByRole('button', { name: /Draft/ })); await waitFor(() => expect(scenarioApi.saveGraph).toHaveBeenCalled()); const saved = vi.mocked(scenarioApi.saveGraph).mock.calls[0][1] as ScenarioGraphResponse['graph']; expect(saved.nodes.find((node) => node.node_key === 'gps')).toMatchObject({ config: { checkpoint_id: 'checkpoint', latitude: 35.7, longitude: 51.4, radius_m: 40 } }); });
-
-it('copies bank coordinates and policy into an independent GPS snapshot', async () => {
-  vi.mocked(contentApi.locations).mockResolvedValue([{ id: 'location', organization_id: 'org', name: 'Saved square', latitude: 35.5, longitude: 51.5, default_radius_m: 30, accuracy_m: 5, dwell_seconds: 10, category: '', description: '', status: 'ACTIVE' }]);
+it('references an active Location Bank point without copying coordinates into the stage', async () => {
+  vi.mocked(contentApi.locations).mockResolvedValue([{ id: '11111111-1111-4111-8111-111111111111', organization_id: 'org', name: 'North Point', latitude: 35.7, longitude: 51.4, default_radius_m: 40, accuracy_m: null, dwell_seconds: null, category: '', description: '', status: 'ACTIVE' }]);
   mountBuilder();
   await userEvent.click(await screen.findByRole('button', { name: 'select gps' }));
-  await screen.findByRole('option', { name: 'Saved square' });
-  fireEvent.change(screen.getByLabelText('انتخاب از نقاط ذخیره‌شده'), { target: { value: 'location' } });
+  const picker = await screen.findByRole('combobox', { name: 'انتخاب موقعیت از بانک مکان' });
+  await userEvent.selectOptions(picker, '11111111-1111-4111-8111-111111111111');
+  expect(picker).toHaveValue('11111111-1111-4111-8111-111111111111');
   await userEvent.click(screen.getByRole('button', { name: 'اعمال تغییرات' }));
+  await screen.findByText(/تغییرات ذخیره‌نشده/);
   await userEvent.click(screen.getByRole('button', { name: 'ذخیره Draft' }));
   await waitFor(() => expect(scenarioApi.saveGraph).toHaveBeenCalled());
   const saved = vi.mocked(scenarioApi.saveGraph).mock.calls[0][1] as ScenarioGraphResponse['graph'];
   const config = saved.nodes.find((node) => node.node_key === 'gps')!.config;
-  expect(config).toMatchObject({ latitude: 35.5, longitude: 51.5, radius_m: 30, accuracy_m: 5, dwell_seconds: 10 });
-  expect(config).not.toHaveProperty('checkpoint_id');
+  expect(config).toMatchObject({ checkpoint_id: '11111111-1111-4111-8111-111111111111', radius_m: 20 });
+  expect(config).not.toHaveProperty('latitude');
+  expect(config).not.toHaveProperty('longitude');
 });
 
+it('keeps Location Bank policy on the reference while the stage owns its radius override', async () => {
+  vi.mocked(contentApi.locations).mockResolvedValue([{ id: '22222222-2222-4222-8222-222222222222', organization_id: 'org', name: 'Saved square', latitude: 35.5, longitude: 51.5, default_radius_m: 30, accuracy_m: 5, dwell_seconds: 10, category: '', description: '', status: 'ACTIVE' }]);
+  mountBuilder();
+  await userEvent.click(await screen.findByRole('button', { name: 'select gps' }));
+  await screen.findByRole('option', { name: 'Saved square' });
+  const picker = screen.getByRole('combobox', { name: 'انتخاب موقعیت از بانک مکان' });
+  await userEvent.selectOptions(picker, '22222222-2222-4222-8222-222222222222');
+  expect(picker).toHaveValue('22222222-2222-4222-8222-222222222222');
+  await userEvent.click(screen.getByRole('button', { name: 'اعمال تغییرات' }));
+  await screen.findByText(/تغییرات ذخیره‌نشده/);
+  await userEvent.click(screen.getByRole('button', { name: 'ذخیره Draft' }));
+  await waitFor(() => expect(scenarioApi.saveGraph).toHaveBeenCalled());
+  const saved = vi.mocked(scenarioApi.saveGraph).mock.calls[0][1] as ScenarioGraphResponse['graph'];
+  const config = saved.nodes.find((node) => node.node_key === 'gps')!.config;
+  expect(config).toMatchObject({ checkpoint_id: '22222222-2222-4222-8222-222222222222', radius_m: 20, accuracy_m: 5, dwell_seconds: 10 });
+  expect(config).not.toHaveProperty('latitude');
+  expect(config).not.toHaveProperty('longitude');
+});
 it('searches the grouped palette and creates an advanced node', async () => {
   mountBuilder();
   await screen.findByRole('button', { name: 'select start' });

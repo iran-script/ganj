@@ -134,6 +134,52 @@ class QrService
         return $result;
     }
 
+    public function verifyProximity(User $actor, UserDevice $device, array $input): array
+    {
+        Validator::make($input, ['session_id' => 'required|uuid'])->validate();
+
+        return DB::transaction(function () use ($actor, $device, $input): array {
+            $actor = User::whereKey($actor->id)->lockForUpdate()->firstOrFail();
+            $actor->ensureActive();
+            $session = $this->scope->resolve($actor, $input['session_id'], true, true);
+            $player = GameSessionPlayer::where('game_session_id', $session->id)->where('user_id', $actor->id)->lockForUpdate()->first();
+            $bound = UserDevice::whereKey($device->id)->where('user_id', $actor->id)->whereNull('revoked_at')->lockForUpdate()->first();
+            if (! $player || in_array($player->participation_status, ['REMOVED', 'DISQUALIFIED'], true)) {
+                throw new ApiException('RESOURCE_NOT_FOUND', 'Session participation not found.', [], 404);
+            }
+            if (! $bound || $player->active_device_id !== $bound->id || $player->roster_frozen_at === null) {
+                throw new ApiException('DEVICE_NOT_BOUND', 'This device is not bound to the active player.', [], 403);
+            }
+            if ($session->status !== 'RUNNING' || $player->registration->status !== 'ACTIVE') {
+                throw new ApiException('ACTION_NOT_ALLOWED', 'Location verification requires an active game.', [], 409);
+            }
+            $instance = TeamScenarioInstance::where('game_session_team_id', $player->game_session_team_id)->where('status', 'ACTIVE')->first();
+            $node = $instance?->nodes()->where('status', 'ACTIVE')->whereHas('node', fn ($query) => $query->where('node_type', 'QR'))->with('node')->first();
+            $checkpointPublicId = $node?->node?->config['checkpoint_id'] ?? null;
+            if (! $node || ! is_string($checkpointPublicId) || $checkpointPublicId === '') {
+                throw new ApiException('ACTION_NOT_ALLOWED', 'This QR stage does not require a Location Bank checkpoint.', [], 409);
+            }
+            $checkpointId = DB::table('checkpoints')->where('public_id', $checkpointPublicId)->where('organization_id', $session->organization_id)->value('id');
+            $latest = DB::table('player_latest_locations')->where('game_session_player_id', $player->id)->where('device_id', $bound->id)->first();
+            $evaluation = DB::table('geofence_evaluations')->where('player_id', $player->id)->where('node_instance_id', $node->id)->latest('id')->first();
+            $maxAge = (int) ($node->node->config['max_location_age_seconds'] ?? config('location.fresh_seconds'));
+            $freshAfter = now()->subSeconds($maxAge);
+            if (! $checkpointId || ! $latest || ! $evaluation || $evaluation->checkpoint_id !== $checkpointId
+                || $evaluation->result !== 'INSIDE' || ! $latest->eligible
+                || $evaluation->location_event_id !== $latest->location_event_id
+                || Carbon::parse($latest->server_received_at)->lessThan($freshAfter)
+                || Carbon::parse($latest->client_timestamp)->lessThan($freshAfter)
+                || Carbon::parse($latest->client_timestamp)->isFuture()
+                || Carbon::parse($evaluation->evaluated_at)->lessThan($freshAfter)
+                || Carbon::parse($evaluation->evaluated_at)->greaterThan(Carbon::parse($latest->server_received_at))) {
+                throw new ApiException('QR_OUTSIDE_ALLOWED_AREA', 'A fresh location check within the stage radius is required.', [], 409);
+            }
+
+            return ['inside' => true, 'distance_meters' => (float) $evaluation->distance_meters,
+                'accuracy_meters' => (float) $evaluation->accuracy, 'checked_at' => Carbon::parse($evaluation->evaluated_at)->toISOString()];
+        }, 3);
+    }
+
     private function scanLocked(User $actor, UserDevice $device, array $input, string $idempotencyKey): array
     {
         Validator::make($input, ['session_id' => 'required|uuid', 'qr_identifier' => 'required|string|min:16|max:512', 'location_event_id' => 'sometimes|nullable|integer'])->validate();
@@ -210,7 +256,19 @@ class QrService
                     $checkpointIds = array_values(array_unique(array_filter([$trigger->checkpoint_id, $nodeCheckpointId])));
                     $evaluation = DB::table('geofence_evaluations')->where('player_id', $player->id)->where('node_instance_id', $node->id)->latest('id')->first();
                     $maxAge = (int) ($node->node->config['max_location_age_seconds'] ?? config('location.fresh_seconds'));
-                    if (! $evaluation || $evaluation->result !== 'INSIDE' || Carbon::parse($evaluation->evaluated_at)->diffInSeconds(now()) > $maxAge || ($evaluation && Carbon::parse($evaluation->evaluated_at)->isFuture())
+                    $latest = isset($node->node->config['checkpoint_id'])
+                        ? DB::table('player_latest_locations')->where('game_session_player_id', $player->id)->where('device_id', $device->id)->first()
+                        : null;
+                    $freshAfter = now()->subSeconds($maxAge);
+                    $latestIsCurrent = $latest && $evaluation && $latest->eligible
+                        && $evaluation->location_event_id === $latest->location_event_id
+                        && Carbon::parse($latest->server_received_at)->greaterThanOrEqualTo($freshAfter)
+                        && Carbon::parse($latest->client_timestamp)->greaterThanOrEqualTo($freshAfter)
+                        && Carbon::parse($latest->client_timestamp)->lessThanOrEqualTo(now())
+                        && Carbon::parse($evaluation->evaluated_at)->greaterThanOrEqualTo($freshAfter)
+                        && Carbon::parse($evaluation->evaluated_at)->lessThanOrEqualTo(Carbon::parse($latest->server_received_at));
+                    if (! $evaluation || $evaluation->result !== 'INSIDE' || Carbon::parse($evaluation->evaluated_at)->diffInSeconds(now()) > $maxAge || Carbon::parse($evaluation->evaluated_at)->isFuture()
+                        || (isset($node->node->config['checkpoint_id']) && ! $latestIsCurrent)
                         || count($checkpointIds) !== 1 || $evaluation->checkpoint_id !== $checkpointIds[0]) {
                         return $this->reject($player, $node, $trigger, 'OUTSIDE_ALLOWED_AREA', 'QR_OUTSIDE_ALLOWED_AREA');
                     }

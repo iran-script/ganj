@@ -89,6 +89,6 @@ it('shows inactive saved locations without allowing accidental selection', () =>
   expect(screen.queryByRole('option', { name: 'Old' })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('checkbox'));
   expect(screen.getByRole('option', { name: 'Old' })).toBeDisabled();
-  fireEvent.change(screen.getByLabelText('انتخاب از نقاط ذخیره‌شده'), { target: { value: 'a' } });
-  expect(pick).toHaveBeenCalledWith({ latitude: 35, longitude: 51, radius_m: 20, accuracy_m: undefined, dwell_seconds: undefined });
+  fireEvent.change(screen.getByLabelText('انتخاب موقعیت از بانک مکان'), { target: { value: 'a' } });
+  expect(pick).toHaveBeenCalledWith(location);
 });

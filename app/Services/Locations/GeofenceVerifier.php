@@ -27,14 +27,16 @@ class GeofenceVerifier
     }
 
     /** @return array{result:string,distance_meters:float,accuracy:float} */
-    public function classify(Checkpoint $checkpoint, object $location, float $minAccuracy): array
+    public function classify(Checkpoint $checkpoint, object $location, float $minAccuracy, ?int $sessionId = null, ?float $radiusOverride = null): array
     {
-        $row = DB::selectOne("SELECT c.type,c.radius_meters,
-            ST_Distance(c.geom::geography,l.geom::geography) AS distance,
-            CASE WHEN c.type='ZONE' THEN ST_Distance(ST_Boundary(c.geom)::geography,l.geom::geography) ELSE 0 END AS boundary_distance,
-            ST_Covers(c.geom,l.geom) AS covered
-            FROM checkpoints c CROSS JOIN player_latest_locations l WHERE c.id=? AND l.game_session_player_id=?",
-            [$checkpoint->id, $location->game_session_player_id]);
+        $row = DB::selectOne("SELECT c.type,COALESCE(?,s.radius_meters,c.radius_meters) AS radius_meters,
+            ST_Distance(COALESCE(s.geom,c.geom)::geography,l.geom::geography) AS distance,
+            CASE WHEN c.type='ZONE' THEN ST_Distance(ST_Boundary(COALESCE(s.geom,c.geom))::geography,l.geom::geography) ELSE 0 END AS boundary_distance,
+            ST_Covers(COALESCE(s.geom,c.geom),l.geom) AS covered
+            FROM checkpoints c CROSS JOIN player_latest_locations l
+            LEFT JOIN game_session_checkpoint_snapshots s ON s.checkpoint_id=c.id AND s.game_session_id=?
+            WHERE c.id=? AND l.game_session_player_id=?",
+            [$radiusOverride, $sessionId, $checkpoint->id, $location->game_session_player_id]);
         $accuracy = (float) $location->accuracy;
         $distance = (float) $row->distance;
         $result = 'UNCERTAIN';
@@ -76,11 +78,17 @@ class GeofenceVerifier
                 ->where(fn ($query) => $query->whereNotNull('config->checkpoint_id')->orWhereNotNull('config->latitude')))->get();
         $checkpoints = Checkpoint::where('organization_id', $player->session->organization_id)
             ->whereIn('public_id', $nodes->map(fn ($node) => $node->node->config['checkpoint_id'] ?? null)->filter())->get()->keyBy('public_id');
+        $snapshots = DB::table('game_session_checkpoint_snapshots')->where('game_session_id', $player->game_session_id)
+            ->whereIn('checkpoint_id', $checkpoints->pluck('id'))->get()->keyBy('checkpoint_id');
         foreach ($nodes as $node) {
             $config = $node->node->config;
             $checkpoint = isset($config['checkpoint_id']) ? ($checkpoints[$config['checkpoint_id']] ?? null) : null;
-            $inline = isset($config['latitude'], $config['longitude'], $config['radius_m']);
-            if (! $inline && (! $checkpoint || $checkpoint->status !== 'ACTIVE')) {
+            $snapshot = $checkpoint ? ($snapshots[$checkpoint->id] ?? null) : null;
+            if ($checkpoint && $snapshot) {
+                $checkpoint->forceFill(['status' => $snapshot->status, 'config' => json_decode($snapshot->config, true, flags: JSON_THROW_ON_ERROR)]);
+            }
+            $inline = ! isset($config['checkpoint_id']) && isset($config['latitude'], $config['longitude'], $config['radius_m']);
+            if (! $inline && (! $checkpoint || ($snapshot?->status ?? $checkpoint->status) !== 'ACTIVE')) {
                 continue;
             }
             $policy = $this->policy($checkpoint, $node);
@@ -89,7 +97,9 @@ class GeofenceVerifier
             if ($previous && $previous->location_event_id === $location->location_event_id && $previous->location_event_received_at === $location->location_event_received_at) {
                 continue;
             }
-            $result = $inline ? $this->classifyInline($node, $location, $policy['min_accuracy']) : $this->classify($checkpoint, $location, $policy['min_accuracy']);
+            $result = $inline ? $this->classifyInline($node, $location, $policy['min_accuracy'])
+                : $this->classify($checkpoint, $location, $policy['min_accuracy'], $player->game_session_id,
+                    isset($config['radius_m']) ? (float) $config['radius_m'] : null);
             $received = CarbonImmutable::parse($location->server_received_at);
             if (! $location->eligible || $player->session->status !== 'RUNNING') {
                 $result['result'] = 'UNCERTAIN';

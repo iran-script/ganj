@@ -27,7 +27,14 @@ class RuntimeLocationVerification implements LocationVerification
         $config = $node->node->config;
         $checkpoint = isset($config['checkpoint_id']) ? Checkpoint::where('public_id', $config['checkpoint_id'])
             ->where('organization_id', $node->instance->session->organization_id)->first() : null;
-        $inline = isset($config['latitude'], $config['longitude'], $config['radius_m']);
+        if ($checkpoint) {
+            $snapshot = DB::table('game_session_checkpoint_snapshots')->where('game_session_id', $player->game_session_id)
+                ->where('checkpoint_id', $checkpoint->id)->first();
+            if ($snapshot) {
+                $checkpoint->forceFill(['status' => $snapshot->status, 'config' => json_decode($snapshot->config, true, flags: JSON_THROW_ON_ERROR)]);
+            }
+        }
+        $inline = ! isset($config['checkpoint_id']) && isset($config['latitude'], $config['longitude'], $config['radius_m']);
         if (! $inline && ! $checkpoint) {
             throw new ApiException('RESOURCE_NOT_FOUND', 'GPS location resource not found.', [], 404);
         }
