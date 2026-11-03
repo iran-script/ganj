@@ -9,11 +9,13 @@ use App\Models\GameSessionPlayer;
 use App\Models\Organization;
 use App\Models\OrganizationMember;
 use App\Models\RoleAssignment;
+use App\Models\Team;
 use App\Models\TeamMember;
 use App\Models\User;
 use App\Services\Audit\AuditService;
 use App\Services\Organizations\GlobalRoleService;
 use App\Services\Organizations\OrganizationScope;
+use App\Services\Teams\TeamService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Pagination\CursorPaginator;
@@ -29,6 +31,7 @@ class ManagementService
         private OrganizationScope $organizations,
         private GlobalRoleService $globalRoles,
         private AuditService $audit,
+        private TeamService $teams,
     ) {}
 
     public function users(User $actor, array $input): CursorPaginator
@@ -243,11 +246,34 @@ class ManagementService
     public function players(User $actor, array $input): CursorPaginator
     {
         Gate::forUser($actor)->authorize('admin.players.view');
-        $query = User::query()->where(function (Builder $players): void {
+        $orgScoped = $this->organizations->isSuperAdmin($actor) || $this->organizations->organizations($actor, true)->exists();
+        $query = User::query()->where(function (Builder $players) use ($orgScoped): void {
             $players->whereHas('teamMemberships')->orWhereHas('gameSessionParticipations');
+            if ($orgScoped) {
+                $players->orWhereHas('organizationMemberships', fn (Builder $members): Builder => $members->where('status', 'ACTIVE'));
+            }
         });
+        $query->whereDoesntHave('globalRoleAssignments', fn (Builder $roles): Builder => $roles->whereNull('revoked_at')->whereIn('role_code', [RoleAssignment::SUPER_ADMIN, 'GAMEMASTER']))
+            ->whereDoesntHave('organizationMemberships', fn (Builder $members): Builder => $members->where('status', 'ACTIVE')->whereIn('role', [OrganizationRole::OrganizationAdmin->value, OrganizationRole::GameMaster->value, OrganizationRole::Staff->value]));
         $this->scopePlayers($actor, $query);
         $this->searchPlayers($actor, $query, $input['q'] ?? null);
+        if (isset($input['organization_id'])) {
+            $organization = Organization::query()->where('public_id', $input['organization_id'])->first();
+            if (! $organization || (! $this->organizations->isSuperAdmin($actor) && ! $this->organizations->organizations($actor, true)->whereKey($organization->id)->exists())) {
+                throw $this->organizations->notFound();
+            }
+            $query->where(function (Builder $scoped) use ($organization): void {
+                $scoped->whereHas('teamMemberships.team', fn (Builder $teams): Builder => $teams->where('organization_id', $organization->id))
+                    ->orWhereHas('gameSessionParticipations.session', fn (Builder $sessions): Builder => $sessions->where('organization_id', $organization->id));
+            });
+        }
+        if (isset($input['team_id'])) {
+            $team = Team::query()->where('public_id', $input['team_id'])->first();
+            if (! $team || (! $this->organizations->isSuperAdmin($actor) && ! $this->organizations->organizations($actor, true)->whereKey($team->organization_id)->exists())) {
+                throw $this->organizations->notFound();
+            }
+            $query->whereHas('teamMemberships', fn (Builder $members): Builder => $members->where('team_id', $team->id));
+        }
         if (isset($input['status'])) {
             if (! $this->organizations->isSuperAdmin($actor) && ! $this->organizations->organizations($actor, true)->exists()) {
                 throw new ApiException('ACTION_NOT_ALLOWED', 'GameMasters cannot filter player results by account status.', [], 403);
@@ -319,6 +345,86 @@ class ManagementService
         ];
     }
 
+    public function updatePlayer(User $actor, string $userId, array $input): array
+    {
+        return DB::transaction(function () use ($actor, $userId, $input): array {
+            $target = $this->authorizePlayerTarget($actor, $userId, true);
+            $this->validateIdentifiers(array_replace(['email' => $target->email, 'mobile' => $target->mobile], $input), $target);
+            $fields = array_intersect_key($input, array_flip(['name', 'email', 'mobile']));
+            $before = $target->only(array_keys($fields));
+            $target->fill($fields);
+            if (array_key_exists('email', $fields) && $target->isDirty('email')) {
+                $target->email_verified_at = null;
+            }
+            if ($target->isDirty()) {
+                $target->save();
+                $this->audit->record('player.updated', 'user', $target->public_id, $input['reason'], [
+                    'changed_fields' => array_keys(array_diff_assoc($target->only(array_keys($fields)), $before)),
+                ], $actor->id);
+            }
+
+            return $this->userProfile($target->fresh()->load($this->playerRelations($actor)));
+        }, 3);
+    }
+
+    public function setPlayerStatus(User $actor, string $userId, array $input): array
+    {
+        $target = $this->authorizePlayerTarget($actor, $userId, true);
+        if ($target->status !== $input['status']) {
+            $before = $target->status;
+            $target->forceFill(['status' => $input['status']])->save();
+            $target->tokens()->delete();
+            $this->audit->record('player.status_changed', 'user', $target->public_id, $input['reason'], [
+                'before' => ['status' => $before], 'after' => ['status' => $target->status],
+            ], $actor->id);
+        }
+
+        return $this->userProfile($target->fresh()->load($this->playerRelations($actor)));
+    }
+
+    public function resetPlayerPassword(User $actor, string $userId, array $input): void
+    {
+        $target = $this->authorizePlayerTarget($actor, $userId, true);
+        $target->forceFill(['password_hash' => Hash::make($input['password'])])->save();
+        $target->tokens()->delete();
+        $this->audit->record('player.password_reset', 'user', $target->public_id, $input['reason'], [], $actor->id);
+    }
+
+    public function deletePlayer(User $actor, string $userId, string $reason): void
+    {
+        $target = $this->authorizePlayerTarget($actor, $userId, true);
+        if ($target->gameSessionParticipations()->whereHas('session', fn (Builder $sessions): Builder => $sessions->whereIn('status', ['REGISTRATION', 'READY', 'RUNNING', 'PAUSED']))->exists()) {
+            throw new ApiException('STATE_TRANSITION_INVALID', 'A player participating in an active or pending session cannot be deleted.', [], 409);
+        }
+        $target->tokens()->delete();
+        $target->delete();
+        $this->audit->record('player.deleted', 'user', $target->public_id, $reason, ['soft_deleted' => true], $actor->id);
+    }
+
+    public function restorePlayer(User $actor, string $userId, string $reason): array
+    {
+        $target = $this->authorizePlayerTarget($actor, $userId, true, true);
+        if ($target->trashed()) {
+            $target->restore();
+            $this->audit->record('player.restored', 'user', $target->public_id, $reason, [], $actor->id);
+        }
+
+        return $this->userProfile($target->fresh()->load($this->playerRelations($actor)));
+    }
+
+    public function addPlayerToTeam(User $actor, string $userId, string $teamId, string $reason): array
+    {
+        $this->authorizePlayerTarget($actor, $userId, true);
+
+        return $this->teams->execute($actor, 'add', ['reason' => $reason], $teamId, $userId);
+    }
+
+    public function removePlayerFromTeam(User $actor, string $userId, string $teamId, string $reason): void
+    {
+        $this->authorizePlayerTarget($actor, $userId, true);
+        $this->teams->execute($actor, 'remove', ['reason' => $reason], $teamId, $userId);
+    }
+
     public function capabilities(User $actor): array
     {
         $global = $actor->globalRoleAssignments()->where('role_code', RoleAssignment::SUPER_ADMIN)->whereNull('organization_id')
@@ -327,11 +433,11 @@ class ManagementService
         $isSuper = in_array(RoleAssignment::SUPER_ADMIN, $global, true);
         $capabilities = [];
         if ($isSuper) {
-            $capabilities = ['admin.users.view', 'admin.users.manage', 'admin.users.status', 'admin.admins.manage', 'admin.players.view', 'admin.roles.view'];
+            $capabilities = ['admin.users.view', 'admin.users.manage', 'admin.users.status', 'admin.admins.manage', 'admin.players.view', 'admin.players.manage', 'admin.roles.view'];
         } else {
             foreach ($memberships as $membership) {
                 if ($membership->role === OrganizationRole::OrganizationAdmin->value) {
-                    $capabilities = array_merge($capabilities, ['organization.members.manage', 'admin.players.view']);
+                    $capabilities = array_merge($capabilities, ['organization.members.manage', 'admin.players.view', 'admin.players.manage']);
                 }
                 if ($membership->role === OrganizationRole::GameMaster->value) {
                     $capabilities[] = 'session.players.operate';
@@ -345,6 +451,41 @@ class ManagementService
         return ['global_roles' => $global, 'organizations' => $memberships->map(fn (OrganizationMember $membership): array => [
             'id' => $membership->organization->public_id, 'name' => $membership->organization->name, 'role' => $membership->role,
         ])->values()->all(), 'capabilities' => array_values(array_unique($capabilities))];
+    }
+
+    private function authorizePlayerTarget(User $actor, string $userId, bool $mutate = false, bool $withTrashed = false): User
+    {
+        if ($mutate) {
+            Gate::forUser($actor)->authorize('admin.players.manage');
+        } else {
+            Gate::forUser($actor)->authorize('admin.players.view');
+        }
+
+        $query = ($withTrashed ? User::withTrashed() : User::query())->where('public_id', $userId);
+        $this->scopePlayers($actor, $query);
+        $target = $query->with('globalRoleAssignments')->first();
+        if (! $target || $this->isAdministrativeAccount($target)) {
+            throw $this->organizations->notFound();
+        }
+
+        return $target;
+    }
+
+    private function isAdministrativeAccount(User $user): bool
+    {
+        if ($user->globalRoleAssignments->contains(fn (RoleAssignment $assignment): bool => $assignment->revoked_at === null && in_array($assignment->role_code, [RoleAssignment::SUPER_ADMIN, 'GAMEMASTER'], true))) {
+            return true;
+        }
+
+        if (RoleAssignment::query()->where('user_id', $user->id)->where('role_code', 'GAMEMASTER')->whereNull('revoked_at')->exists()) {
+            return true;
+        }
+
+        return $user->organizationMemberships()->where('status', 'ACTIVE')->whereIn('role', [
+            OrganizationRole::OrganizationAdmin->value,
+            OrganizationRole::GameMaster->value,
+            OrganizationRole::Staff->value,
+        ])->exists();
     }
 
     public function roleOverview(User $actor): array
@@ -402,7 +543,9 @@ class ManagementService
         }
         $needle = '%'.str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], trim($term)).'%';
         $query->where(fn (Builder $search) => $search->whereRaw('lower(name) LIKE lower(?)', [$needle])
-            ->orWhereRaw('lower(email) LIKE lower(?)', [$needle])->orWhere('mobile', 'LIKE', $needle));
+            ->orWhereRaw('lower(email) LIKE lower(?)', [$needle])
+            ->orWhereRaw("lower(split_part(email, '@', 1)) LIKE lower(?)", [$needle])
+            ->orWhere('mobile', 'LIKE', $needle));
     }
 
     private function searchPlayers(User $actor, Builder $query, ?string $term): void
@@ -488,7 +631,7 @@ class ManagementService
 
     private function playerSafeProfile(User $actor, User $user): array
     {
-        if ($this->organizations->isSuperAdmin($actor)) {
+        if ($this->organizations->isSuperAdmin($actor) || $this->organizations->organizations($actor, true)->exists()) {
             return $this->safeUser($user);
         }
         if ($this->organizations->organizations($actor, true)->exists()) {

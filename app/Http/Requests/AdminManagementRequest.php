@@ -35,6 +35,17 @@ class AdminManagementRequest extends FormRequest
             'resetPassword' => ['password' => ['required', 'string', 'min:12', 'max:72'], 'reason' => ['required', 'string', 'min:3', 'max:1000']],
             'deleteUser' => ['reason' => ['required', 'string', 'min:3', 'max:1000']],
             'restoreUser' => ['reason' => ['required', 'string', 'min:3', 'max:1000']],
+            'update' => [
+                'name' => ['sometimes', 'required', 'string', 'max:255'],
+                'email' => ['sometimes', 'nullable', 'email:rfc', 'max:255'],
+                'mobile' => ['sometimes', 'nullable', 'string', 'regex:/^\+?[0-9]{7,15}$/'],
+                'reason' => ['required', 'string', 'min:3', 'max:1000'],
+            ],
+            'password' => ['password' => ['required', 'string', 'min:12', 'max:72'], 'reason' => ['required', 'string', 'min:3', 'max:1000']],
+            'delete', 'restore' => ['reason' => ['required', 'string', 'min:3', 'max:1000']],
+            'status' => ['status' => ['required', Rule::enum(UserStatus::class)], 'reason' => ['required', 'string', 'min:3', 'max:1000']],
+            'addToTeam' => ['team_id' => ['required', 'uuid'], 'reason' => ['required', 'string', 'min:3', 'max:1000']],
+            'removeFromTeam' => ['reason' => ['required', 'string', 'min:3', 'max:1000']],
             'setStatus' => ['status' => ['required', Rule::enum(UserStatus::class)], 'reason' => ['required', 'string', 'min:3', 'max:1000']],
             'grantAdministrator', 'revokeAdministrator' => ['reason' => ['required', 'string', 'min:3', 'max:1000']],
             'users' => $this->paginationRules() + [
@@ -44,7 +55,12 @@ class AdminManagementRequest extends FormRequest
                 'organization_id' => ['sometimes', 'uuid'],
             ],
             'administrators' => $this->paginationRules() + ['q' => ['sometimes', 'nullable', 'string', 'max:255']],
-            'index' => $this->paginationRules() + ['q' => ['sometimes', 'nullable', 'string', 'max:255'], 'status' => ['sometimes', Rule::enum(UserStatus::class)]],
+            'index' => $this->paginationRules() + [
+                'q' => ['sometimes', 'nullable', 'string', 'max:255'],
+                'status' => ['sometimes', Rule::enum(UserStatus::class)],
+                'organization_id' => ['sometimes', 'uuid'],
+                'team_id' => ['sometimes', 'uuid'],
+            ],
             default => [],
         };
     }

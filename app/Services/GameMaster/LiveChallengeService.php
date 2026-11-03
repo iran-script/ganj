@@ -49,8 +49,10 @@ class LiveChallengeService
 
             $runtime = $instance ? $this->runtime->read($actor, $session->public_id, $registration->team->public_id) : null;
 
+            $visiblePlayers = $players->filter(fn (GameSessionPlayer $player): bool => $player->user !== null);
+
             return ['team_id' => $registration->team->public_id, 'name' => $registration->team->name, 'status' => $registration->status,
-                'players' => $players->map(fn (GameSessionPlayer $player): array => [
+                'players' => $visiblePlayers->map(fn (GameSessionPlayer $player): array => [
                     'id' => $player->public_id, 'name' => $player->user->name, 'status' => $player->participation_status,
                     'presence' => $player->last_seen_at?->toISOString(), 'device_bound' => $player->active_device_id !== null,
                     'device_last_seen_at' => $player->device?->last_seen_at?->toISOString(),

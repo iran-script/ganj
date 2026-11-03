@@ -10,6 +10,7 @@ use App\Models\Organization;
 use App\Models\OrganizationMember;
 use App\Models\RoleAssignment;
 use App\Models\Team;
+use App\Models\TeamMember;
 use App\Models\User;
 use App\Models\UserDevice;
 use App\Services\Audit\AuditService;
@@ -249,13 +250,72 @@ class ManagementApiTest extends TestCase
         $player = User::factory()->create(['email' => 'secret@nexo.test', 'mobile' => '+989121112222']);
         $registration = GameSessionTeam::factory()->create(['game_session_id' => $session->id]);
         GameSessionPlayer::factory()->create(['user_id' => $player->id, 'game_session_id' => $session->id, 'game_session_team_id' => $registration->id]);
-        $foreign = User::factory()->create();
+        $foreign = User::factory()->create(['email' => 'foreign-player@nexo.test']);
 
         $response = $this->withToken($this->bearerFor($gameMaster))->getJson('/api/v1/admin/players')->assertOk()->assertJsonCount(1, 'data');
         $response->assertJsonPath('data.0.id', $player->public_id)->assertJsonMissing(['email' => 'secret@nexo.test'])->assertJsonMissingPath('data.0.status');
         $this->getJson('/api/v1/admin/players/'.$player->public_id)->assertOk()->assertJsonMissingPath('data.user.email')->assertJsonMissingPath('data.user.status');
         $this->getJson('/api/v1/admin/players/'.$foreign->public_id)->assertNotFound();
         $this->getJson('/api/v1/admin/players?status=ACTIVE')->assertForbidden();
+    }
+
+    public function test_organization_admin_can_manage_scoped_players_but_players_cannot_use_management_api(): void
+    {
+        $organization = Organization::factory()->create();
+        $other = Organization::factory()->create();
+        $admin = OrganizationMember::factory()->administrator()->create(['organization_id' => $organization->id])->user;
+        $player = User::factory()->create(['email' => 'managed-player@nexo.test']);
+        $foreign = User::factory()->create(['email' => 'foreign-player@nexo.test']);
+        $team = Team::factory()->create(['organization_id' => $organization->id]);
+        $foreignTeam = Team::factory()->create(['organization_id' => $other->id]);
+        TeamMember::factory()->create(['team_id' => $team->id, 'user_id' => $player->id]);
+        TeamMember::factory()->create(['team_id' => $foreignTeam->id, 'user_id' => $foreign->id]);
+
+        $this->withToken($this->bearerFor($admin))->getJson('/api/v1/admin/players?q=managed-player')
+            ->assertOk()->assertJsonPath('data.0.id', $player->public_id);
+        $this->patchJson('/api/v1/admin/players/'.$player->public_id, [
+            'name' => 'Managed Player', 'email' => 'managed-player-updated@nexo.test', 'reason' => 'Profile correction',
+        ])->assertOk()->assertJsonPath('data.name', 'Managed Player');
+        $this->assertDatabaseHas('users', ['id' => $player->id, 'name' => 'Managed Player', 'email' => 'managed-player-updated@nexo.test']);
+        $this->withToken($this->bearerFor($admin))->patchJson('/api/v1/admin/players/'.$player->public_id, [
+            'email' => 'not-an-email', 'reason' => 'Invalid email test',
+        ])->assertUnprocessable()->assertJsonPath('error.details.fields.email.0', 'The email field must be a valid email address.');
+        $this->withToken($this->bearerFor($admin))->patchJson('/api/v1/admin/players/'.$player->public_id, [
+            'email' => $foreign->email, 'reason' => 'Duplicate email test',
+        ])->assertUnprocessable()->assertJsonPath('error.code', 'VALIDATION_FAILED');
+        $this->withToken($this->bearerFor($admin))->patchJson('/api/v1/admin/players/'.$player->public_id, [
+            'unknown_field' => 'rejected', 'reason' => 'Unknown field test',
+        ])->assertUnprocessable()->assertJsonPath('error.details.fields.unknown_field.0', 'This field is not permitted.');
+        $this->postJson('/api/v1/admin/players/'.$player->public_id.'/password', [
+            'password' => 'managed-player-password', 'reason' => 'Credential rotation',
+        ])->assertNoContent();
+        $this->patchJson('/api/v1/admin/players/'.$player->public_id.'/status', [
+            'status' => 'SUSPENDED', 'reason' => 'Temporary suspension',
+        ])->assertOk();
+        $this->patchJson('/api/v1/admin/players/'.$foreign->public_id, [
+            'name' => 'Cross tenant attempt', 'reason' => 'Must be denied',
+        ])->assertNotFound();
+
+        $this->withToken($this->bearerFor($player))->getJson('/api/v1/admin/players')->assertForbidden();
+        $this->assertDatabaseHas('audit_events', ['action' => 'player.updated', 'resource_id' => $player->public_id]);
+        $this->assertDatabaseHas('audit_events', ['action' => 'player.password_reset', 'resource_id' => $player->public_id]);
+    }
+
+    public function test_player_management_rejects_team_changes_during_active_session(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = OrganizationMember::factory()->administrator()->create(['organization_id' => $organization->id])->user;
+        $player = User::factory()->create();
+        $team = Team::factory()->create(['organization_id' => $organization->id]);
+        TeamMember::factory()->create(['team_id' => $team->id, 'user_id' => $player->id]);
+        $game = Game::factory()->create(['organization_id' => $organization->id]);
+        $session = GameSession::factory()->create(['organization_id' => $organization->id, 'game_id' => $game->id, 'status' => 'REGISTRATION']);
+        GameSessionTeam::factory()->create(['game_session_id' => $session->id, 'team_id' => $team->id]);
+
+        $this->withToken($this->bearerFor($admin))->deleteJson('/api/v1/admin/players/'.$player->public_id.'/teams/'.$team->public_id, [
+            'reason' => 'Attempt during registration',
+        ])->assertConflict();
+        $this->assertDatabaseHas('team_members', ['team_id' => $team->id, 'user_id' => $player->id, 'status' => 'ACTIVE']);
     }
 
     public function test_capabilities_are_server_derived_and_legacy_me_contract_remains_unchanged(): void

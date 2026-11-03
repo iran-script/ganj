@@ -1,0 +1,3 @@
+services:
+  control:
+    image: nexo-control:login-fix-20261018T122500Z

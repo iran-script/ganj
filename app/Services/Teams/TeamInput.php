@@ -18,6 +18,7 @@ class TeamInput
             'update' => ['name' => ['sometimes', 'required', 'string', 'max:255'], 'avatar_media_id' => ['sometimes', 'prohibited'], 'reason' => $reason],
             'createInvite' => ['expires_at' => ['sometimes', 'nullable', 'date', 'after:now'], 'max_uses' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:2147483647'], 'reason' => $reason],
             'join' => ['invite_code' => ['required', 'string', 'max:256']],
+            'add' => ['reason' => $reason],
             'transfer' => ['user_id' => ['required', 'uuid'], 'reason' => $reason],
             'archive', 'remove', 'revokeInvite' => ['reason' => $reason],
             'index' => ['limit' => ['sometimes', 'integer', 'min:1', 'max:100'], 'cursor' => ['sometimes', 'nullable', 'string', 'max:512'], 'q' => ['sometimes', 'nullable', 'string', 'max:255'], 'status' => ['sometimes', 'string', 'in:ACTIVE,ARCHIVED']],

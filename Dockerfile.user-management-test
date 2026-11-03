@@ -1,0 +1,16 @@
+FROM php:8.4-cli-bookworm
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libpq-dev libzip-dev unzip git \
+    && docker-php-ext-install -j1 pdo_pgsql pcntl zip \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+WORKDIR /var/www/html
+COPY composer.json composer.lock ./
+RUN COMPOSER_MEMORY_LIMIT=256M composer install --no-interaction --prefer-dist --no-scripts --no-progress
+COPY . .
+RUN mkdir -p storage/app/private storage/app/public storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs bootstrap/cache \
+    && COMPOSER_MEMORY_LIMIT=256M composer dump-autoload --optimize --no-interaction
+
+CMD ["tail", "-f", "/dev/null"]

@@ -49,6 +49,6 @@ class GameSessionPlayer extends Model
 
     public function publicProfile(): array
     {
-        return ['id' => $this->public_id, 'user' => ['id' => $this->user->public_id, 'name' => $this->user->name], 'status' => $this->participation_status, 'device_bound' => $this->active_device_id !== null, 'roster_frozen_at' => $this->roster_frozen_at?->toISOString()];
+        return ['id' => $this->public_id, 'user' => $this->user ? ['id' => $this->user->public_id, 'name' => $this->user->name] : null, 'status' => $this->participation_status, 'device_bound' => $this->active_device_id !== null, 'roster_frozen_at' => $this->roster_frozen_at?->toISOString()];
     }
 }

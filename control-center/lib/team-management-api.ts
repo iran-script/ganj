@@ -7,7 +7,7 @@ export type ManagedTeam = Omit<Team, 'members'> & {
   organization?: { id: string; name: string } | null;
   created_at?: string | null;
   archived_at?: string | null;
-  members?: Array<{ user_id: string; name: string; status: string; joined_at: string }>;
+  members?: Array<{ user_id: string; name: string; username?: string | null; email?: string | null; account_status?: string; role?: 'CAPTAIN' | 'MEMBER'; status: string; joined_at?: string | null }>;
 };
 
 export type ManagedTeamPage = { data: ManagedTeam[]; meta?: { pagination?: PaginationMeta } };

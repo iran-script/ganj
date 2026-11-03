@@ -83,6 +83,8 @@ class AppServiceProvider extends ServiceProvider
 
             return RoleAssignment::query()->where('user_id', $user->id)->where('role_code', 'GAMEMASTER')->whereNull('revoked_at')->exists();
         });
+        Gate::define('admin.players.manage', fn (User $user): bool => app(OrganizationScope::class)->isSuperAdmin($user)
+            || app(OrganizationScope::class)->organizations($user, true)->exists());
         foreach (['user.read_self', 'user.update_self', 'device.list_self', 'device.revoke_self'] as $ability) {
             Gate::define($ability, fn (User $user): bool => $user->status === UserStatus::Active->value);
         }

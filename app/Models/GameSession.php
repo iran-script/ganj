@@ -63,9 +63,11 @@ class GameSession extends Model
             $players = $registration->players()->with('user')->get();
             $own = $viewer !== null && $players->contains('user_id', $viewer->id);
 
+            $visiblePlayers = $players->filter(fn (GameSessionPlayer $player): bool => $player->user !== null);
+
             return ['team_id' => $registration->team->public_id, 'name' => $registration->team->name, 'status' => $registration->status,
                 'player_count' => $players->whereNotIn('participation_status', ['REMOVED', 'DISQUALIFIED'])->count(),
-                'players' => $operational || $own ? $players->map(fn (GameSessionPlayer $player): array => $player->publicProfile())->all() : []];
+                'players' => $operational || $own ? $visiblePlayers->map(fn (GameSessionPlayer $player): array => $player->publicProfile())->values()->all() : []];
         })->all();
 
         return $data;

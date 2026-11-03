@@ -56,7 +56,7 @@ class TeamPolicy
 
     public function remove(User $actor, Team $team): bool
     {
-        return $this->captain($actor, $team);
+        return $this->captain($actor, $team) || $this->support($actor, $team);
     }
 
     public function leave(User $actor, Team $team): bool

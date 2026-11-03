@@ -45,6 +45,13 @@ Route::prefix('v1')->group(function (): void {
             Route::get('/roles', [AdminManagementController::class, 'roles'])->name('roles.index');
             Route::get('/players', [PlayerManagementController::class, 'index'])->name('players.index');
             Route::get('/players/{user_id}', [PlayerManagementController::class, 'show'])->whereUuid('user_id')->name('players.show');
+            Route::patch('/players/{user_id}', [PlayerManagementController::class, 'update'])->whereUuid('user_id')->name('players.update');
+            Route::patch('/players/{user_id}/status', [PlayerManagementController::class, 'status'])->whereUuid('user_id')->name('players.status');
+            Route::post('/players/{user_id}/password', [PlayerManagementController::class, 'password'])->whereUuid('user_id')->name('players.password');
+            Route::delete('/players/{user_id}', [PlayerManagementController::class, 'delete'])->whereUuid('user_id')->name('players.delete');
+            Route::post('/players/{user_id}/restore', [PlayerManagementController::class, 'restore'])->whereUuid('user_id')->name('players.restore');
+            Route::post('/players/{user_id}/teams', [PlayerManagementController::class, 'addToTeam'])->whereUuid('user_id')->name('players.teams.add');
+            Route::delete('/players/{user_id}/teams/{team_id}', [PlayerManagementController::class, 'removeFromTeam'])->whereUuid('user_id')->whereUuid('team_id')->name('players.teams.remove');
             Route::patch('/organizations/{organization_id}/members/{user_id}/role', [OrganizationController::class, 'changeMemberRole'])->whereUuid('organization_id')->whereUuid('user_id')->name('organizations.members.role');
             Route::post('/organizations/{organization_id}/members', [OrganizationController::class, 'adminAddMember'])->whereUuid('organization_id')->name('organizations.members.add');
             Route::delete('/organizations/{organization_id}/members/{user_id}', [OrganizationController::class, 'adminRemoveMember'])->whereUuid('organization_id')->whereUuid('user_id')->name('organizations.members.remove');

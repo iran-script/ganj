@@ -37,7 +37,8 @@ class TeamApiTest extends TestCase
         $response = $this->withHeader('X-Request-Id', 'team-create')->postJson('/api/v1/teams', ['name' => 'NEXO Explorers'])
             ->assertCreated()->assertJsonPath('data.status', 'ACTIVE')->assertJsonPath('data.member_count', 1)
             ->assertJsonPath('data.eligible_for_game', false)->assertJsonPath('data.captain_user_id', $actor->public_id)
-            ->assertJsonPath('data.organization', null)->assertJsonMissingPath('data.members.0.email')
+            ->assertJsonPath('data.organization', null)->assertJsonPath('data.members.0.role', 'CAPTAIN')
+            ->assertJsonPath('data.members.0.account_status', 'ACTIVE')->assertJsonPath('data.members.0.email', $actor->email)
             ->assertJsonMissingPath('data.members.0.id')->assertJsonMissingPath('data.captain.email');
         $team = Team::sole();
         $this->assertSame($team->public_id, $response->json('data.id'));
@@ -219,6 +220,22 @@ class TeamApiTest extends TestCase
         $this->getJson('/api/v1/teams?cursor=invalid')->assertUnprocessable();
         $this->getJson('/api/v1/teams?limit=101')->assertUnprocessable();
         $this->getJson('/api/v1/teams?sort=users.password_hash')->assertUnprocessable();
+    }
+
+    public function test_team_listing_ignores_active_memberships_for_soft_deleted_users(): void
+    {
+        $actor = $this->authenticate();
+        $team = Team::factory()->create(['captain_user_id' => $actor->id]);
+        $deletedMember = User::factory()->create();
+        TeamMember::factory()->create(['team_id' => $team->id, 'user_id' => $deletedMember->id, 'status' => 'ACTIVE']);
+        $deletedMember->delete();
+
+        $response = $this->getJson('/api/v1/teams')->assertOk()->assertJsonCount(1, 'data');
+
+        $response->assertJsonPath('data.0.id', $team->public_id)
+            ->assertJsonPath('data.0.member_count', 1)
+            ->assertJsonCount(1, 'data.0.members')
+            ->assertJsonPath('data.0.members.0.user_id', $actor->public_id);
     }
 
     public static function captainOperations(): array

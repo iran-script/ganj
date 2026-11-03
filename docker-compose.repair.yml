@@ -1,0 +1,104 @@
+services:
+  app:
+    image: nexo-release-app:pm-20261103-team-controls
+    build:
+      context: .
+      target: production
+    restart: unless-stopped
+    env_file: release.env
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      DB_CONNECTION: pgsql
+      DB_HOST: nexo-postgres
+      DB_PORT: "5432"
+      DB_DATABASE: nexo_restore_d8e35d4d_20261017T213125Z_38265
+      DB_USERNAME: nexo
+      REDIS_HOST: nexo-redis
+      REDIS_PORT: "6379"
+      QUEUE_CONNECTION: redis
+    volumes:
+      - app_storage:/var/www/html/storage
+    networks:
+      nexo:
+        aliases: [nexo-release-app]
+    mem_limit: 192m
+    memswap_limit: 192m
+    healthcheck:
+      test: [CMD, php, -r, "exit(@fsockopen('127.0.0.1', 9000) ? 0 : 1);"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  control:
+    image: nexo-release-control:pm-20261103-team-controls
+    build:
+      context: .
+      target: production-control
+    restart: unless-stopped
+    networks:
+      nexo:
+        aliases: [nexo-release-control]
+    mem_limit: 256m
+    memswap_limit: 256m
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/login').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  queue:
+    image: nexo-release-app:pm-20261103-team-controls
+    restart: unless-stopped
+    env_file: release.env
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      DB_CONNECTION: pgsql
+      DB_HOST: nexo-postgres
+      DB_PORT: "5432"
+      DB_DATABASE: nexo_restore_d8e35d4d_20261017T213125Z_38265
+      DB_USERNAME: nexo
+      REDIS_HOST: nexo-redis
+      REDIS_PORT: "6379"
+      QUEUE_CONNECTION: redis
+    command: [php, artisan, queue:work, redis, --sleep=3, --tries=3, --backoff=5, --timeout=60, --memory=80, --max-time=3600, --no-interaction]
+    volumes:
+      - app_storage:/var/www/html/storage
+    networks: [nexo]
+    mem_limit: 128m
+    memswap_limit: 128m
+
+  scheduler:
+    image: nexo-release-app:pm-20261103-team-controls
+    restart: unless-stopped
+    env_file: release.env
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      DB_CONNECTION: pgsql
+      DB_HOST: nexo-postgres
+      DB_PORT: "5432"
+      DB_DATABASE: nexo_restore_d8e35d4d_20261017T213125Z_38265
+      DB_USERNAME: nexo
+      REDIS_HOST: nexo-redis
+      REDIS_PORT: "6379"
+      QUEUE_CONNECTION: redis
+    command: [php, artisan, schedule:work, --no-interaction]
+    volumes:
+      - app_storage:/var/www/html/storage
+    networks: [nexo]
+    mem_limit: 128m
+    memswap_limit: 128m
+
+volumes:
+  app_storage:
+    external: true
+    name: nexo_app_storage
+
+networks:
+  nexo:
+    external: true
+    name: nexo_nexo

@@ -54,7 +54,7 @@ describe('team management screens', () => {
   it('renders an API failure state with retry', async () => {
     vi.mocked(teamManagementApi.list).mockRejectedValueOnce(new Error('offline'));
     mount(<TeamManagementPage />);
-    expect(await screen.findByText('فهرست تیم‌ها دریافت نشد. دسترسی و اتصال API را بررسی کنید.')).toBeInTheDocument();
+    expect(await screen.findByText('اتصال به API برقرار نشد؛ شبکه و آدرس سرویس را بررسی کنید.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'تلاش دوباره' })).toBeInTheDocument();
   });
 
@@ -66,6 +66,15 @@ describe('team management screens', () => {
     await user.type(screen.getByLabelText('دلیل عملیات'), 'پایان فعالیت');
     await user.click(screen.getByRole('button', { name: 'تأیید و ثبت' }));
     await waitFor(() => expect(api.delete).toHaveBeenCalledWith('/teams/team-1/members/player-2', { reason: 'پایان فعالیت' }));
+  });
+
+  it('renders the captain and member management action bar for a permitted administrator', async () => {
+    const user = userEvent.setup();
+    mount(<TeamManagementDetailPage />);
+    expect(await screen.findByRole('button', { name: 'تغییر کاپیتان' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'افزودن بازیکن' })).toHaveLength(2);
+    await user.click(screen.getByRole('button', { name: 'تغییر کاپیتان' }));
+    expect(screen.getByRole('dialog', { name: 'تغییر کاپیتان' })).toBeInTheDocument();
   });
 
   it('requires confirmation and a reason before archiving a team', async () => {

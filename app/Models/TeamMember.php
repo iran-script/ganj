@@ -35,6 +35,17 @@ class TeamMember extends Model
 
     public function publicProfile(): array
     {
-        return ['user_id' => $this->user->public_id, 'name' => $this->user->name, 'status' => $this->status, 'joined_at' => $this->joined_at->toISOString()];
+        $user = $this->user;
+        $username = $user?->email ? explode('@', $user->email, 2)[0] : null;
+
+        return [
+            'user_id' => $user?->public_id,
+            'name' => $user?->name ?? 'حساب حذف‌شده',
+            'username' => $username,
+            'email' => $user?->email,
+            'account_status' => $user?->status ?? 'DELETED',
+            'status' => $this->status,
+            'joined_at' => $this->joined_at?->toISOString(),
+        ];
     }
 }

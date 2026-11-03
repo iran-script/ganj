@@ -1,0 +1,5 @@
+services:
+  app:
+    image: nexo-app:management-20261018T120500Z
+  control:
+    image: nexo-control:management-20261018T120500Z

@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { DashboardContent } from '@/components/dashboard-content';
 
 vi.mock('@tanstack/react-query', () => ({ useQuery: () => ({ isPending: true }) }));
-vi.mock('@/lib/queries', () => ({ queries: { games: () => ({}), sessions: () => ({}), health: () => ({}) } }));
+vi.mock('@/lib/queries', () => ({ queries: { games: () => ({}), sessions: () => ({}), teams: () => ({}), health: () => ({}) } }));
 
 function renderDashboard() { return render(<DashboardContent />); }
 

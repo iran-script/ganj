@@ -1,0 +1,3 @@
+services:
+  control:
+    image: nexo-control:theme-redesign-final-20261018T121000Z

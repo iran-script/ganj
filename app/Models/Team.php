@@ -61,13 +61,16 @@ class Team extends Model
 
     public function publicProfile(): array
     {
-        $this->loadMissing(['captain', 'organization', 'activeMembers.user']);
-        $count = $this->activeMembers->count();
+        $this->loadMissing(['captain', 'organization']);
+        $activeMembers = $this->activeMembers()->whereHas('user')->with('user')->get();
+        $count = $activeMembers->count();
+
+        $captain = $this->captain;
 
         return ['id' => $this->public_id, 'name' => $this->name, 'status' => $this->status,
-            'captain_user_id' => $this->captain->public_id,
-            'captain' => ['id' => $this->captain->public_id, 'name' => $this->captain->name],
-            'members' => $this->activeMembers->map(fn (TeamMember $member): array => $member->publicProfile())->values()->all(),
+            'captain_user_id' => $captain?->public_id,
+            'captain' => $captain ? ['id' => $captain->public_id, 'name' => $captain->name] : null,
+            'members' => $activeMembers->map(fn (TeamMember $member): array => $member->publicProfile() + ['role' => $member->user_id === $this->captain_user_id ? 'CAPTAIN' : 'MEMBER'])->values()->all(),
             'member_count' => $count, 'eligible_for_game' => $this->status === 'ACTIVE' && $count >= 4 && $count <= 8,
             'organization' => $this->organization ? ['id' => $this->organization->public_id, 'name' => $this->organization->name] : null,
             'created_at' => $this->created_at?->toISOString(), 'updated_at' => $this->updated_at?->toISOString(), 'archived_at' => $this->archived_at?->toISOString()];

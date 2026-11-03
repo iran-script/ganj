@@ -2,7 +2,7 @@ import { request } from '@/lib/api-client';
 import type { ApiEnvelope, PaginationMeta, User } from '@/types/api';
 
 export type ManagementPage<T> = { data: T[]; meta?: { pagination?: PaginationMeta } };
-export type ManagementListOptions = { cursor?: string; q?: string; status?: string; role?: string; organization_id?: string };
+export type ManagementListOptions = { cursor?: string; q?: string; status?: string; role?: string; organization_id?: string; team_id?: string; limit?: string | number };
 export type ManagedUserInput = { name: string; email?: string | null; mobile?: string | null; password?: string; reason: string };
 export type ManagedMembership = { organization: { id: string; name: string }; role: string; status: string; joined_at?: string | null; left_at?: string | null };
 export type ManagedUser = Omit<User, 'status'> & {
@@ -24,8 +24,8 @@ export type ManagedRole = { code: string; scope: string; description: string; as
 export type ManagedRoleOverview = { roles: ManagedRole[]; audit: Array<{ actor_id?: string | null; action: string; resource_type: string; resource_id: string; target_id?: string | null; organization_id?: string | null; reason?: string | null; occurred_at: string }> };
 
 function pagePath(path: string, options: ManagementListOptions = {}): string {
-  const query = new URLSearchParams({ limit: '25' });
-  Object.entries(options).forEach(([key, value]) => { if (value) query.set(key, value); });
+  const query = new URLSearchParams({ limit: String(options.limit ?? 25) });
+  Object.entries(options).forEach(([key, value]) => { if (value) query.set(key, String(value)); });
   return `${path}?${query.toString()}`;
 }
 
@@ -43,6 +43,13 @@ export const managementApi = {
   grantAdministrator: (id: string, reason: string) => request(`/admin/admins/${id}`, { method: 'POST', body: JSON.stringify({ reason }) }),
   revokeAdministrator: (id: string, reason: string) => request<void>(`/admin/admins/${id}`, { method: 'DELETE', body: JSON.stringify({ reason }) }),
   roles: () => request<ManagedRoleOverview>('/admin/roles'),
-  players: (options: Pick<ManagementListOptions, 'cursor' | 'q' | 'status'> = {}) => request<ApiEnvelope<ManagedUser[]>>(pagePath('/admin/players', options), {}, false) as Promise<ManagementPage<ManagedUser>>,
+  players: (options: Pick<ManagementListOptions, 'cursor' | 'q' | 'status' | 'organization_id' | 'team_id' | 'limit'> = {}) => request<ApiEnvelope<ManagedUser[]>>(pagePath('/admin/players', options), {}, false) as Promise<ManagementPage<ManagedUser>>,
   player: (id: string) => request<PlayerDetail>(`/admin/players/${id}`),
+  updatePlayer: (id: string, input: Omit<ManagedUserInput, 'password'>) => request<ManagedUser>(`/admin/players/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
+  setPlayerStatus: (id: string, status: 'ACTIVE' | 'SUSPENDED' | 'BLOCKED', reason: string) => request<ManagedUser>(`/admin/players/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status, reason }) }),
+  resetPlayerPassword: (id: string, password: string, reason: string) => request<void>(`/admin/players/${id}/password`, { method: 'POST', body: JSON.stringify({ password, reason }) }),
+  deletePlayer: (id: string, reason: string) => request<void>(`/admin/players/${id}`, { method: 'DELETE', body: JSON.stringify({ reason }) }),
+  restorePlayer: (id: string, reason: string) => request<ManagedUser>(`/admin/players/${id}/restore`, { method: 'POST', body: JSON.stringify({ reason }) }),
+  addPlayerToTeam: (id: string, team_id: string, reason: string) => request(`/admin/players/${id}/teams`, { method: 'POST', body: JSON.stringify({ team_id, reason }) }),
+  removePlayerFromTeam: (id: string, team_id: string, reason: string) => request<void>(`/admin/players/${id}/teams/${team_id}`, { method: 'DELETE', body: JSON.stringify({ reason }) }),
 };

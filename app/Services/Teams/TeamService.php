@@ -68,7 +68,7 @@ class TeamService
      */
     public function execute(User $actor, string $action, array $input = [], ?string $teamId = null, ?string $targetId = null, ?string $idempotencyKey = null): ?array
     {
-        if (! in_array($action, ['create', 'update', 'join', 'leave', 'remove', 'transfer', 'archive', 'createInvite', 'revokeInvite'], true)) {
+        if (! in_array($action, ['create', 'update', 'join', 'add', 'leave', 'remove', 'transfer', 'archive', 'createInvite', 'revokeInvite'], true)) {
             throw new \InvalidArgumentException('Unknown team operation.');
         }
 
@@ -111,6 +111,7 @@ class TeamService
             $result = match ($action) {
                 'create' => $this->create($actor, $input)->publicProfile(),
                 'join' => $this->join($actor, $input['invite_code'])->publicProfile(),
+                'add' => $this->add($actor, $team ?? throw $this->organizations->notFound(), $targetId, $input['reason'] ?? null),
                 default => $this->mutate($actor, $team ?? throw $this->organizations->notFound(), $action, $input, $targetId),
             };
             if ($key !== null) {
@@ -188,6 +189,34 @@ class TeamService
         return $team;
     }
 
+    private function add(User $actor, Team $team, ?string $targetId, ?string $reason = null): array
+    {
+        Gate::forUser($actor)->authorize('invites', $team);
+        $this->ensureActive($team);
+
+        if (! Str::isUuid($targetId ?? '')) {
+            throw $this->organizations->notFound();
+        }
+
+        $target = User::query()->where('public_id', $targetId)->first() ?? throw $this->organizations->notFound();
+        $target->ensureActive();
+        if ($team->activeMembers()->where('user_id', $target->id)->exists()) {
+            throw new ApiException('ALREADY_TEAM_MEMBER', 'The player is already an active member.', [], 409);
+        }
+        if ($team->activeMembers()->count() >= 8) {
+            throw new ApiException('TEAM_FULL', 'The team already has eight active members.', [], 409);
+        }
+        if (GameSession::query()->whereIn('status', ['REGISTRATION', 'READY', 'RUNNING', 'PAUSED'])
+            ->whereHas('teams', fn (Builder $sessions): Builder => $sessions->where('team_id', $team->id))->exists()) {
+            throw new ApiException('STATE_TRANSITION_INVALID', 'A player cannot be added while the team is assigned to an active or pending session.', [], 409);
+        }
+
+        $this->addMembership($team, $target);
+        $this->events->record('team.member_joined.v1', $actor, $team, reason: $reason, target: $target);
+
+        return $team->fresh()->publicProfile();
+    }
+
     private function mutate(User $actor, Team $team, string $action, array $input, ?string $targetId): ?array
     {
         $ability = match ($action) {
@@ -237,6 +266,10 @@ class TeamService
                 return null;
             case 'leave':
             case 'remove':
+                if ($action === 'remove' && GameSession::query()->whereIn('status', ['REGISTRATION', 'READY', 'RUNNING', 'PAUSED'])
+                    ->whereHas('teams', fn (Builder $sessions): Builder => $sessions->where('team_id', $team->id))->exists()) {
+                    throw new ApiException('STATE_TRANSITION_INVALID', 'A player cannot be removed while the team is assigned to an active or pending session.', [], 409);
+                }
                 $member = $this->activeMember($team, $action === 'leave' ? $actor->public_id : ($targetId ?? ''));
                 if ($member->user_id === $team->captain_user_id) {
                     throw new ApiException('ACTION_NOT_ALLOWED', 'Transfer captaincy before leaving or removing the captain.', [], 409);
