@@ -232,6 +232,17 @@ class AuthController extends ChangeNotifier {
     return true;
   }
 
+  Future<void> resetForServerChange() async {
+    await outbox.discardAll();
+    await api.clearToken();
+    await database.clearCache();
+    identity.clear();
+    user = null;
+    profile = null;
+    error = null;
+    notifyListeners();
+  }
+
   @override
   void dispose() {
     SessionExpiry.instance.removeListener(_handleSessionExpiry);

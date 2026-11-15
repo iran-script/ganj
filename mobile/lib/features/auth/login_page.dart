@@ -6,6 +6,7 @@ import '../../core/auth/auth_controller.dart';
 import '../../core/errors/api_error.dart';
 import '../../core/auth/user_profile.dart';
 import '../../app/nexo_routes.dart';
+import 'server_settings_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({required this.auth, super.key});
@@ -136,6 +137,25 @@ class _LoginPageState extends State<LoginPage> {
                           : () => Navigator.of(context)
                               .pushNamed(NexoRoutes.register),
                       child: const Text('ساخت حساب بازیکن'),
+                    ),
+                    const SizedBox(height: NexoSpace.x2),
+                    TextButton.icon(
+                      onPressed: submitting
+                          ? null
+                          : () => Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) => ServerSettingsPage(
+                                    auth: widget.auth,
+                                    onSaved: () async {
+                                      if (context.mounted) {
+                                        Navigator.of(context).pop();
+                                      }
+                                    },
+                                  ),
+                                ),
+                              ),
+                      icon: const Icon(Icons.dns_outlined),
+                      label: const Text('تنظیمات سرور'),
                     ),
                     const SizedBox(height: NexoSpace.x2),
                     const Text('اطلاعات ورود شما به‌صورت امن نگهداری می‌شود.',

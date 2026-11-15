@@ -26,6 +26,8 @@ class ApiClient {
   final SecureStore _store;
   final DeviceIdentity _device;
 
+  SecureStore get store => _store;
+
   Future<Map<String, dynamic>> get(String path, {bool device = false}) async {
     return _send('GET', path, device: device);
   }

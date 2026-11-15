@@ -105,6 +105,8 @@ class LobbySession {
     required this.status,
     required this.teams,
     this.registrationClosesAt,
+    this.scheduledStartAt,
+    this.timezone,
   });
 
   final String id;
@@ -112,12 +114,16 @@ class LobbySession {
   final String status;
   final List<SessionTeam> teams;
   final String? registrationClosesAt;
+  final String? scheduledStartAt;
+  final String? timezone;
 
   factory LobbySession.fromJson(Map<String, dynamic> json) => LobbySession(
         id: json['id'] as String? ?? '',
         gameId: json['game_id'] as String? ?? '',
         status: json['status'] as String? ?? 'UNKNOWN',
         registrationClosesAt: json['registration_closes_at'] as String?,
+        scheduledStartAt: json['scheduled_start_at'] as String?,
+        timezone: json['timezone'] as String?,
         teams: (json['teams'] as List? ?? const [])
             .whereType<Map<String, dynamic>>()
             .map(SessionTeam.fromJson)

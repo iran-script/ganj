@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../app/nexo_components.dart';
 import '../../core/api/api_client.dart';
 import '../../core/auth/auth_controller.dart';
-import '../rooms/room_pages.dart';
+import '../player/game_entry_page.dart';
 
 class GamesPage extends StatefulWidget {
   const GamesPage({required this.auth, super.key});
@@ -94,8 +94,8 @@ class _GamesPageState extends State<GamesPage> {
                               trailing: const Icon(Icons.chevron_left),
                               onTap: () => Navigator.of(context).push(
                                 MaterialPageRoute<void>(
-                                  builder: (_) =>
-                                      RoomListPage(auth: widget.auth, game: game),
+                                  builder: (_) => GameEntryPage(
+                                      auth: widget.auth, game: game),
                                 ),
                               ),
                             ),

@@ -7,6 +7,7 @@ import '../../core/api/api_client.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/errors/api_error.dart';
 import '../../features/runtime/gameplay_page.dart';
+import '../../features/player/game_entry_page.dart';
 import '../scoring/game_result_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -129,7 +130,8 @@ class _HomePageState extends State<HomePage> {
                       .toList();
                   final active = sessions
                       .where((session) =>
-                          ['RUNNING', 'PAUSED'].contains(session['status']) &&
+                          ['REGISTRATION', 'READY', 'RUNNING', 'PAUSED']
+                                  .contains(session['status']) &&
                           ownTeam(session, widget.auth.user?['id']) != null)
                       .toList();
                   final completed = sessions
@@ -189,6 +191,7 @@ class _HomePageState extends State<HomePage> {
                                     (game) => game['id'] == session['game_id'])
                                 .firstOrNull,
                             userId: widget.auth.user?['id'] as String?,
+                            auth: widget.auth,
                           ),
                         if (completed.isNotEmpty) ...[
                           const SizedBox(height: NexoSpace.x4),
@@ -226,16 +229,21 @@ Map<String, dynamic>? ownTeam(Map<String, dynamic> session, dynamic userId) =>
 
 class _ActiveSession extends StatelessWidget {
   const _ActiveSession(
-      {required this.session, required this.game, required this.userId});
+      {required this.session,
+      required this.game,
+      required this.userId,
+      required this.auth});
 
   final Map<String, dynamic> session;
   final Map<String, dynamic>? game;
   final String? userId;
+  final AuthController auth;
 
   @override
   Widget build(BuildContext context) {
     final team = ownTeam(session, userId);
     final running = session['status'] == 'RUNNING';
+    final waiting = ['REGISTRATION', 'READY'].contains(session['status']);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(NexoSpace.x4),
@@ -243,10 +251,14 @@ class _ActiveSession extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(children: [
-              Icon(running ? Icons.play_circle : Icons.pause_circle,
+              Icon(running ? Icons.play_circle : Icons.hourglass_top,
                   color: running ? NexoTheme.success : NexoTheme.amber),
               const SizedBox(width: NexoSpace.x2),
-              Text(running ? 'بازی در جریان است' : 'بازی موقتاً متوقف است'),
+              Text(running
+                  ? 'بازی در جریان است'
+                  : waiting
+                      ? 'منتظر شروع بازی'
+                      : 'بازی موقتاً متوقف است'),
             ]),
             const SizedBox(height: NexoSpace.x3),
             Text(game?['name'] as String? ?? 'بازی فعال',
@@ -257,16 +269,19 @@ class _ActiveSession extends StatelessWidget {
             const SizedBox(height: NexoSpace.x4),
             FilledButton.icon(
               icon: const Icon(Icons.play_arrow),
-              label: const Text('ادامه بازی'),
+              label: Text(running ? 'ورود به بازی' : 'دیدن وضعیت'),
               onPressed: () => Navigator.push(
                 context,
-                MaterialPageRoute(
-                  builder: (_) => GameplayPage(
-                    sessionId: session['id'] as String,
-                    gameName: game?['name'] as String? ?? 'بازی فعال',
-                    teamName: team?['name'] as String?,
-                  ),
-                ),
+                MaterialPageRoute(builder: (_) => running
+                    ? GameplayPage(
+                        sessionId: session['id'] as String,
+                        gameName: game?['name'] as String? ?? 'بازی فعال',
+                        teamName: team?['name'] as String?,
+                      )
+                    : GameEntryPage(
+                        auth: auth,
+                        game: game ?? {'id': session['game_id'], 'name': 'بازی'},
+                      )),
               ),
             ),
           ],
